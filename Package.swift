@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "KeyStatsCoreTests",
+    name: "KeytideCoreTests",
     platforms: [.macOS(.v13)],
     products: [
-        .library(name: "KeyStatsCore", targets: ["KeyStatsCore"])
+        .library(name: "KeytideCore", targets: ["KeytideCore"])
     ],
     targets: [
         .target(
-            name: "KeyStatsEventCore",
+            name: "KeytideEventCore",
             path: "KeyStatsHelper",
             exclude: ["Package.swift", "README.md", "Tests", "Assets.xcassets", "Info.plist", "KeyStatsHelper.entitlements", "main.swift",
                       "EventTapController.swift", "HelperXPCListener.swift", "HelperIdleSupervisor.swift",
@@ -18,12 +18,12 @@ let package = Package(
         ),
         .target(
             name: "PostHog",
-            path: "KeyStatsTestSupport/PostHog"
+            path: "KeytideTestSupport/PostHog"
         ),
         .target(
-            name: "KeyStatsCore",
+            name: "KeytideCore",
             dependencies: ["PostHog"],
-            path: "KeyStats",
+            path: "Keytide",
             exclude: [
                 "Assets.xcassets",
                 "MechanicalKeyboardWindowController.swift",
@@ -37,7 +37,8 @@ let package = Package(
                 "KeyboardHeatmapView.swift",
                 "KeyboardHeatmapRepresentable.swift",
                 "KeyboardVisualizationViewController.swift",
-                "KeyStats.entitlements",
+                "KeyboardStudioTheme.swift",
+                "Keytide.entitlements",
                 "NotificationManager.swift",
                 "StatsManagerLiveEnvironment.swift",
                 "HoverIconButton.swift",
@@ -104,9 +105,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "KeyStatsCoreTests",
-            dependencies: ["KeyStatsCore", "KeyStatsEventCore", "PostHog"],
-            path: "KeyStatsTests",
+            name: "KeytideCoreTests",
+            dependencies: ["KeytideCore", "KeytideEventCore", "PostHog"],
+            path: "KeytideTests",
             sources: ["GrowthKeyboard3DTests.swift", "AppLaunchModeTests.swift", "GrowthKeyboardTests.swift", "KeyboardUsageProgressTests.swift", "KeyboardTrackingPeriodTests.swift", "CumulativeKeyboardSnapshotTests.swift", "KeyboardLayoutTests.swift", "PhysicalKeyMappingTests.swift", "AppStatsTests.swift", "AppKeyBreakdownTests.swift", "AppDetailPresentationTests.swift", "SystemMediaKeyTests.swift", "InteractionProfileTests.swift", "AppActivityTrackerTests.swift", "AnalyticsManagerTests.swift", "StatsManagerTests.swift", "StatsModelsTests.swift", "UpdateCheckCoordinatorTests.swift", "SyncCoreTests.swift"]
         )
     ]

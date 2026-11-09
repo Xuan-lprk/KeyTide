@@ -1,100 +1,85 @@
 #!/bin/bash
-
-# KeyStats DMG 打包脚本
-
+# Build local macOS distribution artifacts. Does not launch or publish the app.
 set -eo pipefail
 
-# 配置
-APP_NAME="KeyStats"
-SCHEME="KeyStats"
-PROJECT="KeyStats.xcodeproj"
-CONFIGURATION="Release"
-BUILD_DIR="build"
-DMG_DIR="$BUILD_DIR/dmg"
-
-# 获取脚本所在目录的上级目录（项目根目录）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-OUTPUT_DIR="$PROJECT_DIR"
 cd "$PROJECT_DIR"
 
-echo "📦 开始打包 $APP_NAME..."
-
-# 清理旧的构建
-echo "🧹 清理旧的构建..."
-rm -rf "$BUILD_DIR"
-mkdir -p "$DMG_DIR" "$OUTPUT_DIR"
-
-# Fail fast: 校验 vendor 里的 helper 跟 cdhash.txt 一致
-echo "🔍 校验 vendored helper..."
-"$SCRIPT_DIR/check_vendored_helper.sh"
-
-# 构建 Release 版本
-echo "🔨 构建 Release 版本..."
-SYNC_BUILD_SETTING=()
-if [ -n "${KEYSTATS_SYNC_SERVICE_URL:-}" ]; then
-    SYNC_BUILD_SETTING+=("KEYSTATS_SYNC_SERVICE_URL=$KEYSTATS_SYNC_SERVICE_URL")
-    echo "🔄 已配置生产同步服务地址"
+# Validate configuration before building. No Sync URL is required for local use.
+SYNC_URL="${KEYSTATS_SYNC_SERVICE_URL:-}"
+if [[ -n "$SYNC_URL" && ! "$SYNC_URL" =~ ^https://[A-Za-z0-9.-]+\.workers\.dev/?$ ]]; then
+    echo "KEYSTATS_SYNC_SERVICE_URL must be empty or an https workers.dev URL." >&2
+    exit 1
 fi
-xcodebuild -project "$PROJECT" \
-    -scheme "$SCHEME" \
-    -configuration "$CONFIGURATION" \
-    -derivedDataPath "$BUILD_DIR/DerivedData" \
-    -archivePath "$BUILD_DIR/$APP_NAME.xcarchive" \
-    archive \
-    CODE_SIGN_IDENTITY="-" \
-    ARCHS="arm64 x86_64" \
-    ONLY_ACTIVE_ARCH=NO \
-    "${SYNC_BUILD_SETTING[@]}" \
-    | xcpretty || xcodebuild -project "$PROJECT" \
-    -scheme "$SCHEME" \
-    -configuration "$CONFIGURATION" \
-    -derivedDataPath "$BUILD_DIR/DerivedData" \
-    -archivePath "$BUILD_DIR/$APP_NAME.xcarchive" \
-    archive \
-    CODE_SIGN_IDENTITY="-" \
-    ARCHS="arm64 x86_64" \
-    ONLY_ACTIVE_ARCH=NO \
-    "${SYNC_BUILD_SETTING[@]}"
-
-# 导出 .app
-echo "📤 导出应用..."
-APP_PATH="$BUILD_DIR/$APP_NAME.xcarchive/Products/Applications/$APP_NAME.app"
-
-if [ ! -d "$APP_PATH" ]; then
-    echo "❌ 构建失败：找不到 $APP_PATH"
+RELEASE_VERSION="${KEYSTATS_RELEASE_VERSION:-}"
+if [[ -n "$RELEASE_VERSION" && ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "KEYSTATS_RELEASE_VERSION must be numeric X.Y.Z." >&2
     exit 1
 fi
 
-# 复制到 DMG 目录，再用 vendor/ 里预先签好的 helper 覆盖 Xcode 嵌入的那个
-cp -R "$APP_PATH" "$DMG_DIR/"
-"$SCRIPT_DIR/embed_vendored_helper.sh" "$DMG_DIR/$APP_NAME.app"
+"$SCRIPT_DIR/check_vendored_helper.sh"
+# Keep the current manual-update distribution contract explicit.
+python3 - <<'PYTHON'
+import plistlib
+with open("Keytide/Info.plist", "rb") as source:
+    info = plistlib.load(source)
+if info.get("KeyStatsInAppUpdatesEnabled") is not False or info.get("SUEnableAutomaticChecks") is not False:
+    raise SystemExit("Manual release packaging requires in-app and automatic updates to remain disabled.")
+PYTHON
 
-echo "🔏 签名应用..."
-"$SCRIPT_DIR/sign_app.sh" "$DMG_DIR/$APP_NAME.app"
+# Each run owns one directory; never delete build/ or other QA evidence.
+PACKAGING_DIR="$PROJECT_DIR/build/ReleasePackaging"
+OUTPUT_DIR="$PACKAGING_DIR/output"
+mkdir -p "$PACKAGING_DIR"
+RUN_DIR="$(mktemp -d "$PACKAGING_DIR/run.XXXXXX")"
+STAGING_DIR="$RUN_DIR/dmg"
+ARCHIVE_PATH="$RUN_DIR/Keytide.xcarchive"
+mkdir -p "$STAGING_DIR"
+echo "Packaging log and intermediate files: $RUN_DIR"
 
-# 创建 Applications 文件夹的符号链接
-ln -s /Applications "$DMG_DIR/Applications"
+VERSION_SETTING=()
+if [[ -n "$RELEASE_VERSION" ]]; then
+    VERSION_SETTING=("MARKETING_VERSION=$RELEASE_VERSION")
+fi
+xcodebuild -project Keytide.xcodeproj \
+    -scheme Keytide -configuration Release \
+    -destination 'generic/platform=macOS' \
+    -derivedDataPath "$RUN_DIR/DerivedData" \
+    -archivePath "$ARCHIVE_PATH" \
+    archive CODE_SIGN_IDENTITY="-" \
+    ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+    KEYSTATS_SYNC_SERVICE_URL="$SYNC_URL" \
+    "${VERSION_SETTING[@]}" 2>&1 | tee "$RUN_DIR/xcodebuild.log"
 
-DMG_NAME="${APP_NAME}.dmg"
-DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
+APP_PATH="$ARCHIVE_PATH/Products/Applications/Keytide.app"
+if [[ ! -d "$APP_PATH" ]]; then
+    echo "Archive did not contain Keytide.app: $APP_PATH" >&2
+    exit 1
+fi
 
-# 创建 DMG
-echo "💿 创建 DMG..."
-hdiutil create -volname "$APP_NAME" \
-    -srcfolder "$DMG_DIR" \
-    -ov -format UDZO \
-    "$DMG_PATH"
+ditto "$APP_PATH" "$STAGING_DIR/Keytide.app"
+"$SCRIPT_DIR/embed_vendored_helper.sh" "$STAGING_DIR/Keytide.app"
+"$SCRIPT_DIR/sign_app.sh" "$STAGING_DIR/Keytide.app"
 
-# 清理临时文件
-echo "🧹 清理临时文件..."
-rm -rf "$DMG_DIR"
-rm -rf "$BUILD_DIR/DerivedData"
-rm -rf "$BUILD_DIR/$APP_NAME.xcarchive"
+# A UI-only release must retain the vendored Helper identity after packaging.
+EXPECTED_HASH="$(tr -d '[:space:]' < vendor/KeyStatsHelper.cdhash.txt)"
+ACTUAL_HASH="$(codesign -d -vvv "$STAGING_DIR/Keytide.app/Contents/Resources/KeyStatsHelper.app" 2>&1 | awk -F= '/^CDHash=/ {print $2}')"
+if [[ -z "$ACTUAL_HASH" || "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
+    echo "Packaged Helper cdhash differs from vendor; stop for signature/permission review." >&2
+    exit 1
+fi
 
-# 完成
-DMG_SIZE=$(du -h "$DMG_PATH" | cut -f1)
-echo ""
-echo "✅ 打包完成！"
-echo "📍 位置: $DMG_PATH"
-echo "📊 大小: $DMG_SIZE"
+# Both distribution formats contain the very same staged, signed app.
+ln -s /Applications "$STAGING_DIR/Applications"
+hdiutil create -volname Keytide -srcfolder "$STAGING_DIR" \
+    -ov -format UDZO "$RUN_DIR/Keytide.dmg"
+ditto -c -k --sequesterRsrc --keepParent \
+    "$STAGING_DIR/Keytide.app" "$RUN_DIR/Keytide.zip"
+(
+    cd "$RUN_DIR"
+    shasum -a 256 Keytide.dmg Keytide.zip > SHA256SUMS
+)
+mkdir -p "$OUTPUT_DIR"
+cp "$RUN_DIR/Keytide.dmg" "$RUN_DIR/Keytide.zip" "$RUN_DIR/SHA256SUMS" "$OUTPUT_DIR/"
+echo "Local artifacts ready: $OUTPUT_DIR (ad-hoc signed; not notarized)"

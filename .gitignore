@@ -56,3 +56,6 @@ __pycache__/
 
 # Claude
 .claude/settings.json
+
+# Local project handoff notes
+/PROJECT.md

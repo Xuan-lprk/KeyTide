@@ -1,48 +1,55 @@
 #!/bin/bash
-
+# Prepare macOS version metadata locally. Never commit, tag, push, or publish.
 set -euo pipefail
 
-usage() {
-    echo "Usage: ./scripts/release.sh <version>"
-    echo "Example: ./scripts/release.sh 1.8"
-}
-
-VERSION="${1:-}"
-if [[ -z "$VERSION" ]]; then
-    usage
+if [[ "${1:-}" == "--help" ]]; then
+    echo "Usage: ./scripts/release.sh X.Y.Z[-beta.N]"
+    echo "Only updates local macOS app version/build metadata; review the diff before publishing."
+    exit 0
+fi
+if [[ $# -ne 1 || ! "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+    echo "Usage: ./scripts/release.sh X.Y.Z[-beta.N]" >&2
     exit 1
 fi
-
-TAG="v$VERSION"
-PBXPROJ="KeyStats.xcodeproj/project.pbxproj"
-WINDOWS_CSPROJ="KeyStats.Windows/KeyStats/KeyStats.csproj"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-cd "$PROJECT_DIR"
+cd "$(dirname "$SCRIPT_DIR")"
+python3 - "$1" <<'PYTHON'
+from pathlib import Path
+import re
+import sys
 
-echo "Release $TAG"
+version = sys.argv[1].split("-beta.")[0]
+path = Path("Keytide.xcodeproj/project.pbxproj")
+source = path.read_text()
+pattern = re.compile(r"buildSettings = \{.*?\n\t\t\t\};", re.S)
+blocks = [m.group() for m in pattern.finditer(source)
+          if "INFOPLIST_FILE = Keytide/Info.plist;" in m.group()]
+if len(blocks) != 2:
+    raise SystemExit("Expected exactly two main-app build configurations; no files changed.")
+builds = []
+for block in blocks:
+    build = re.findall(r"CURRENT_PROJECT_VERSION = ([0-9]+);", block)
+    marketing = re.findall(r"MARKETING_VERSION = [^;]+;", block)
+    if len(build) != 1 or len(marketing) != 1:
+        raise SystemExit("Ambiguous main-app version settings; no files changed.")
+    builds.append(int(build[0]))
+if len(set(builds)) != 1:
+    raise SystemExit("Debug and Release build numbers differ; no files changed.")
+next_build = builds[0] + 1
 
-current_build=$(perl -0ne 'if (/CURRENT_PROJECT_VERSION = ([0-9]+);\s*\n\s*DEVELOPMENT_TEAM = 228XJY7Z32;/) { print $1; exit }' "$PBXPROJ")
-if [[ -z "${current_build:-}" ]]; then
-    echo "Error: unable to read main-app CURRENT_PROJECT_VERSION from $PBXPROJ"
-    exit 1
-fi
+def update(match):
+    block = match.group()
+    if "INFOPLIST_FILE = Keytide/Info.plist;" not in block:
+        return block
+    block = re.sub(r"CURRENT_PROJECT_VERSION = [0-9]+;",
+                   f"CURRENT_PROJECT_VERSION = {next_build};", block)
+    return re.sub(r"MARKETING_VERSION = [^;]+;", f"MARKETING_VERSION = {version};", block)
 
-new_build=$((current_build + 1))
-perl -0pi -e "s/CURRENT_PROJECT_VERSION = [0-9]+;(\s*\n\s*DEVELOPMENT_TEAM = 228XJY7Z32;)/CURRENT_PROJECT_VERSION = ${new_build};\$1/g; s/MARKETING_VERSION = [^;]+;/MARKETING_VERSION = ${VERSION};/g" "$PBXPROJ"
-perl -0pi -e "s#<Version>[^<]+</Version>#<Version>${VERSION}</Version>#g" "$WINDOWS_CSPROJ"
-echo "Set MARKETING_VERSION=$VERSION, CURRENT_PROJECT_VERSION=$new_build, Windows Version=$VERSION"
+path.write_text(pattern.sub(update, source))
+print(f"Prepared macOS version {version}, build {next_build} locally.")
+print("Helper and Windows metadata are unchanged. No Git or remote actions performed.")
+PYTHON
 
-echo "Committing version bump..."
-git add "$PBXPROJ" "$WINDOWS_CSPROJ"
-git commit -m "chore: bump version to $VERSION"
-
-echo "Tagging and pushing..."
-git tag "$TAG"
-git push origin main
-git push origin "$TAG"
-
-echo ""
-echo "Release complete for $TAG"
-echo "GitHub Actions will build and publish artifacts, including Sparkle appcast."
+echo "Review the version diff, then build with ./scripts/build_dmg.sh."
+echo "Tag v$1 is only a suggested release name; this script does not create it."

@@ -1,6 +1,10 @@
-# KeyStats AI Agent 开发指南
+# Keytide AI Agent 开发指南
 
 本文档是面向 Codex/AI Agent 的项目操作手册。所有判断以当前源码为准；如果本文档与实现不一致，先核对代码，再以最小范围修正文档或实现。仓库内更深层目录若存在自己的 `AGENTS.md`，该目录下的工作同时受更具体规则约束。
+
+## 当前交付状态（2026-11-09）
+
+主 macOS 产品、工程和 scheme 名称为 Keytide，仓库为 `Xuan-lprk/KeyTide`。用户已确认当前新功能测试通过并授权本地提交；最近验证为 234 项核心 XCTest、7 项发布脚本测试与 Debug 构建通过。VoiceOver 真实朗读、性能／能耗及最终分发验收独立保留。下文带日期的旧实验与未验收描述是当时记录，以当前源码及本节为准。`PROJECT.md` 仅在本地保留并忽略，不要求从新 checkout 获取它。
 
 ## 工作区与交接
 
@@ -25,7 +29,7 @@
 
 ## 项目定位
 
-KeyStats 是 macOS 13+ 原生菜单栏应用，主工程使用 Swift 5、AppKit，并在部分界面嵌入 SwiftUI。产品正在从键鼠计数器逐步发展为：
+Keytide 是 macOS 13+ 原生菜单栏应用，主工程使用 Swift 5、AppKit，并在部分界面嵌入 SwiftUI。产品正在从键鼠计数器逐步发展为：
 
 > 隐私优先、低功耗的 macOS 物理交互统计与可视化工具。
 
@@ -69,7 +73,7 @@ KeyStats 是 macOS 13+ 原生菜单栏应用，主工程使用 Swift 5、AppKit�
 
 ## 隐私边界
 
-KeyStats 不是 keylogger。
+Keytide 不是 keylogger。
 
 永远不要记录、持久化、导出或上传：
 
@@ -113,10 +117,10 @@ macOS input events
 
 关键职责如下：
 
-- `KeyStats/AppLaunchMode.swift`
+- `Keytide/AppLaunchMode.swift`
   - 进程级启动策略；仅 Debug 显式参数 `--debug-gui-acceptance` 启用验收模式，Release 忽略，不持久化参数。
   - 验收模式拒绝不匹配的 Helper 协议版本；普通模式保留既有兼容行为。
-- `KeyStats/AppDelegate.swift`
+- `Keytide/AppDelegate.swift`
   - 启动菜单栏 UI、更新与同步协调器。
   - 安装并连接 Helper，设置 XPC event sink。
   - 协调辅助功能权限提示、授权轮询与 Helper 启动。
@@ -125,7 +129,7 @@ macOS input events
   - 启动 `HelperXPCListener` 并保持 Helper run loop。
 - `KeyStatsHelper/Package.swift`、`KeyStatsHelper/README.md`、`KeyStatsHelper/Tests/`
   - 独立、无第三方依赖的原生 Helper SwiftPM 构建／测试入口，直接复用正式十份 Swift 源码。SwiftPM 裸可执行文件不替代签名 `.app` 或既有安装流程，不以 `swift run` 启动已安装的服务。
-  - 新包清单、README 和具体测试文件通过主工程 helper 同步目录例外排除；新增测试必须同步排除其路径，避免 XCTest 进入生产。根 SwiftPM 的 `KeyStatsEventCore` 继续直接编译原有四份事件源码。
+  - 新包清单、README 和具体测试文件通过主工程 helper 同步目录例外排除；新增测试必须同步排除其路径，避免 XCTest 进入生产。根 SwiftPM 的 `KeytideEventCore` 继续直接编译原有四份事件源码。
   - c3502 的本地源码评估见 Helper README：当前远程通知／请求与 WebSocket 传输未完成，只能作为未来聚合快照插件的候选。不得把原始按键／移动 payload 接入 c3502，不放宽现有 XPC 鉴权。
 - `KeyStatsHelper/EventTapController.swift`
   - Helper 内唯一正式 `CGEventTap` 所有者。
@@ -137,58 +141,58 @@ macOS input events
 - `KeyStatsHelper/HelperXPCListener.swift`
   - 提供 XPC 服务、校验主 App 的签名标识和当前用户 UID。
   - 管理单个活动连接、权限握手、tap 生命周期和事件转发。
-- `KeyStats/HelperSupervisor.swift`
+- `Keytide/HelperSupervisor.swift`
   - 从 App bundle 安装 Helper 到 Application Support。
   - 以 cdhash 判断是否需要替换，维护 LaunchAgent；这与 TCC 授权稳定性直接相关。
-- `KeyStats/HelperXPCClient.swift`
+- `Keytide/HelperXPCClient.swift`
   - 管理主 App 到 Helper 的连接、握手、状态、重连和权限请求。
   - 使用现有 `NSLock` 与 one-shot completion 保护并发状态。
-- `KeyStats/RemoteEventProcessor.swift`
+- `Keytide/RemoteEventProcessor.swift`
   - 解码 Helper payload，过滤 auto-repeat，处理修饰键状态和键名映射。
   - 将键盘、点击、滚动、移动距离和可选的 App identity 写入 `StatsManager`。
-- `KeyStats/AppActivityTracker.swift`
+- `Keytide/AppActivityTracker.swift`
   - 缓存前台 App 与 PID 对应的 bundle ID/显示名，仅为分应用聚合提供 identity。
-- `KeyStats/StatsModels.swift`、`KeyStats/AppStats.swift`
+- `Keytide/StatsModels.swift`、`Keytide/AppStats.swift`
   - 定义 `DailyStats`、`AllTimeStats`、`AppStats` 与键位规范化/聚合逻辑。
   - Codable 解码包含历史字段兼容，例如 legacy `otherClicks` 和旧 peak 数值格式。
-- `KeyStats/StatsManager.swift`
+- `Keytide/StatsManager.swift`
   - 聚合当前日、历史、每键、每 App、距离、KPS/CPS 和通知数据。
   - 通过 `UserDefaults` 保存 JSON 编码的当前数据与历史。
   - 使用锁、snapshot、延迟保存、UI 更新合并和午夜切日逻辑。
   - 通过 `Environment` 注入存储、时间、日历、日期 key formatter、自动调度和正式运行时副作用，使真实实现可以被 SwiftPM 确定性测试。
   - 区分本机可写历史与包含远端 shard 的显示快照。
-- `KeyStats/StatsManagerLiveEnvironment.swift`
+- `Keytide/StatsManagerLiveEnvironment.swift`
   - 为正式 App 提供 `StatsManager.shared`，并连接通知、Sync 展示和真实运行时依赖。
   - SwiftPM 测试不编译该文件，而是通过 `StatsManager.Environment` 创建隔离实例。
-- `KeyStats/MenuBarController.swift`
+- `Keytide/MenuBarController.swift`
   - 管理 `NSStatusItem`、`NSPopover`、右键菜单和菜单栏更新。
   - 当前菜单栏视图已经使用 `NSHostingView` 嵌入 SwiftUI，但 shell 仍为 AppKit。
-- `KeyStats/StatsPopoverViewController.swift`
+- `Keytide/StatsPopoverViewController.swift`
   - AppKit 统计 popover，部分数值/KPS 视图嵌入 SwiftUI。
   - 当前实验菜单保留 384pt 宽、系统 `.popover` 材质、今日双列总量、5×3 常用键阵列、96pt 趋势图、全宽鼠标短行及原有底栏；顶部旧 3D 特写与资源已移除，Growth 改为常用键标题行的轻量文字入口。此前整体视觉未通过，新 Input Pulse 候选不代表这些问题已解决。
   - 只在显示期间订阅统计更新并运行 KPS 刷新 timer。
-- `KeyStats/TypingPulseView.swift`
+- `Keytide/TypingPulseView.swift`
   - 顶部 132pt Input Pulse：复用可见期间现有 0.3s KPS timer 读取 `currentRatesSnapshot()`，以双层 CAShapeLayer 波形显示 KPS／CPS；约 12 秒、40 个聚合速率样本只存内存，不接收键名、原始时间戳或输入顺序。
   - 聚合统计更新可触发有节流、最多 10 个的一次性键帽光点；无新 Timer／DisplayLink／全局监听，空闲零样本不持续更新波形。关闭时停止采样、清空样本并移除光点及动画；Reduce Motion 禁用路径过渡和光点。2026-10-29 已将波形改为直接生成 CGMutablePath，修正 macOS 13 兼容性，Debug 构建与 225 项核心测试通过（核心测试不覆盖该 App-only 视图）；视觉、真实输入和能耗未验收。
-- `KeyStats/KeyboardHeatmapViewController.swift`
+- `Keytide/KeyboardHeatmapViewController.swift`
   - AppKit 键盘热力图与日期切换；窗口可见时订阅统计更新。
-- `KeyStats/KeyboardVisualizationViewController.swift`、`GrowthKeyboardViewController.swift`
+- `Keytide/KeyboardVisualizationViewController.swift`、`GrowthKeyboardViewController.swift`
   - 统一 Keyboard 窗口的 Mac / 机械模型与试打切换；Growth 使用正式累计显示查询、日期选择和有界回放，旧全局 Heatmap 分页已移除。
-- `KeyStats/GrowthKeyboardPresentation.swift`、`GrowthPlaybackState.swift`
+- `Keytide/GrowthKeyboardPresentation.swift`、`GrowthPlaybackState.swift`
   - 缓存 display-aggregated timeline、日历日选择，以及可取消的 one-shot 回放；不读取历史文件或新增持久化。
-- `KeyStats/EditorialKeyboardRenderer.swift`
+- `Keytide/EditorialKeyboardRenderer.swift`
   - 正式 77 键 Editorial 2.5D renderer；静态路径/layer 缓存，动态 count/material 更新。
   - 同文件的 `KeyboardVisualizationCanvasView` 统一窗口/页面背景；只有最外层 canvas 可修改 window background。AppKit backing layer frame 由 AppKit 管理，不得在 layout 中设置为局部 bounds。
-- `KeyStats/GrowthKeyboard3DGeometry.swift`
+- `Keytide/GrowthKeyboard3DGeometry.swift`
   - 正式 Geometry v2 的固定 progress → height / bevel 映射；与统计 progress 分离，不按当天最高值或日期归一化。
-- `KeyStats/GrowthKeyboard3DScene.swift`
+- `Keytide/GrowthKeyboard3DScene.swift`
   - 消费 Editorial 的显式只读 scene layout，保留 77 键几何对象，执行一次静态 SceneKit snapshot；无 prototype 文件依赖或持续渲染回调。
-- `KeyStats/GrowthKeyboard3DRenderer.swift`
+- `Keytide/GrowthKeyboard3DRenderer.swift`
   - 管理懒加载场景、80ms one-shot 合并、按 counts / canvas 区分的三帧 LRU、字形与次数 overlay、键位选择及取消 token。
   - 3D 回放在图像、次数就绪后通知 controller 提交日期，再由 playback driver 等待并推进。
-- `KeyStats/AnalyticsManager.swift`
+- `Keytide/AnalyticsManager.swift`
   - 唯一允许直接接触 PostHog SDK 的产品分析入口。
-- `Package.swift`、`KeyStatsTests/`
+- `Package.swift`、`KeytideTests/`
   - SwiftPM 选择可独立测试的 Core 源文件，并用 XCTest 覆盖模型、兼容解码、热力图聚合、同步核心和更新检查协调逻辑。
 
 ## 成熟后端的处理原则
@@ -217,7 +221,7 @@ macOS input events
 - 验收模式仍连接现有 Helper。协议版本必须等于 `KeyStatsHelper/HelperLocations.swift` 的 `interfaceVersion`；兼容且已有授权时仍会 `startMonitoring`，没有授权或连接失败时仅报告，不安装修复、不权限轮询或自动重连。
 - 此模式不是只读数据沙盒或全局离线模式；正式 StatsManager 持久化、Analytics consent、Sync 启动及退出时 flush 仍存在。Helper 只接受一个活动连接，不同时运行两份主 App。
 - 普通安装路径在 Helper 缺失、任一 cdhash 读取失败或 hash 不同时复制；即使 hash 相同，LaunchAgent plist 不同或服务未加载仍可能写配置/注册服务。hash 一致不能单独证明普通启动无系统改动。
-- 2026-10-25 用户授权更新来源迁移：`KeyStats/Info.plist` 已指向 `Xuan-lprk/KeyStatsMac` 的 appcast，`SUEnableAutomaticChecks = false`，上游公钥已替换为用户提供的公钥。`KeyStatsInAppUpdatesEnabled = false`，仅配置公钥不启用更新；未明确开启 App 内更新或公钥无效时，`UpdateManager` 初始化、探测和订阅不创建 Sparkle；普通模式的手动入口仅打开自己的 Releases 页面。不得自行生成/导出私钥、启用自动更新或发布；Keychain、CI Secret、签名和首发验收仍需相应授权。
+- 2026-10-25 用户授权更新来源迁移：`Keytide/Info.plist` 已指向 `Xuan-lprk/KeyTide` 的 appcast，`SUEnableAutomaticChecks = false`，上游公钥已替换为用户提供的公钥。`KeyStatsInAppUpdatesEnabled = false`，仅配置公钥不启用更新；未明确开启 App 内更新或公钥无效时，`UpdateManager` 初始化、探测和订阅不创建 Sparkle；普通模式的手动入口仅打开自己的 Releases 页面。不得自行生成/导出私钥、启用自动更新或发布；Keychain、CI Secret、签名和首发验收仍需相应授权。
 
 ## UI 技术方向
 
@@ -265,7 +269,7 @@ macOS input events
 - 所有 `trackEvent`、`trackClick`、`trackPageView` 必须经过 `AnalyticsManager`。
 - 禁止在其他文件直接调用 `PostHogSDK` 或另建绕过 consent 的分析通道。
 
-PostHog 只用于了解用户如何使用 KeyStats 产品本身，例如 App 版本、macOS 版本、页面打开、功能操作和设置状态。不得把下列内容放入 Analytics event 或 properties：
+PostHog 只用于了解用户如何使用 Keytide 产品本身，例如 App 版本、macOS 版本、页面打开、功能操作和设置状态。不得把下列内容放入 Analytics event 或 properties：
 
 - 按键次数、键位或组合键统计。
 - 鼠标点击、移动或滚动统计。
@@ -327,8 +331,8 @@ PostHog 只用于了解用户如何使用 KeyStats 产品本身，例如 App 版
 swift test
 
 xcodebuild \
-  -project KeyStats.xcodeproj \
-  -scheme KeyStats \
+  -project Keytide.xcodeproj \
+  -scheme Keytide \
   -configuration Debug \
   -destination 'platform=macOS' \
   build
@@ -336,8 +340,8 @@ xcodebuild \
 
 当前自动测试事实：
 
-- `Package.swift` 定义 `KeyStatsCore`、`KeyStatsEventCore`、本地 PostHog 测试替身和 `KeyStatsCoreTests`；SwiftPM 不使用正式 PostHog SDK 发送数据。
-- `KeyStatsTests/` 当前覆盖模型、App attribution、Analytics consent、`StatsManager` 的本地持久化/导入/合并/历史、同步核心和更新检查协调逻辑。
+- `Package.swift` 定义 `KeytideCore`、`KeytideEventCore`、本地 PostHog 测试替身和 `KeytideCoreTests`；SwiftPM 不使用正式 PostHog SDK 发送数据。
+- `KeytideTests/` 当前覆盖模型、App attribution、Analytics consent、`StatsManager` 的本地持久化/导入/合并/历史、同步核心和更新检查协调逻辑。
 - 2026-10-28 原生 Helper 分离检查在 `build/HelperSeparation/`：独立包 8 项 XCTest、根工程 225 项 XCTest 和正式 Debug 构建通过。Helper 十份运行源码与主 App 安装／权限链未改，重建前后 Helper cdhash 与两个 Mach-O 的被签名内容相同，Debug 签名区字节有差异；本机开发证书的 strict 校验在前后均报 `CSSMERR_TP_NOT_TRUSTED`。vendor helper 校验通过且未更新；没有启动、安装、重新授权或进行 c3502 端到端测试，不能据此宣称 TCC 或发布签名验收通过。
 - 最新菜单特写与阵列布局检查在 `build/MenuBarCloseup/`：225 项 XCTest、Debug 构建、三语资源 lint 通过；同源隔离原生检查覆盖三语、深浅色、15／2／空键位及侧键行，完整有侧键为 384×626pt、无侧键为 384×606pt、2 键／空数据为 384×532pt，鼠标短标签无截断。静态图透明通道、1x／2x 尺寸与独立深浅色渲染检查通过；原生按钮鼠标跟踪、键盘动作、图表切换和关闭清理通过。Hover／Reduce Motion 使用隔离分支注入，不能替代正式桌面的真实悬停、完整 VoiceOver 和能耗验收；用户已否定整体视觉，当前仅保留分析快照。
 - 旧双图入口验证在 `build/KimiMenuVerification/`：225 项 XCTest、Debug 构建、资源 lint、三语同源隔离原生检查通过。该阶段英文紧凑长标签省略已由当前短行布局替代，旧记录不代表当前界面。
@@ -354,7 +358,7 @@ xcodebuild \
 每次实现完成后至少：
 
 1. 运行相关 XCTest；适合时运行完整 `swift test`。
-2. 构建 `KeyStats` scheme。
+2. 构建 `Keytide` scheme。
 3. 查看 `git diff --check`、`git diff` 和 `git status`。
 4. 确认没有无关文件变化。
 

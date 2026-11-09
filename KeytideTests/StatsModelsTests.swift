@@ -1,0 +1,504 @@
+import XCTest
+import CoreGraphics
+import IOKit.hidsystem
+@testable import KeytideCore
+
+final class StatsModelsTests: XCTestCase {
+    func testPhysicalPlusRegression() {
+        XCTAssertEqual(keyboardHeatmapCounts(from: ["+": 4]), ["=": 4])
+        XCTAssertEqual(keyboardHeatmapCounts(from: ["Cmd++": 3]), ["Cmd": 3, "=": 3])
+        XCTAssertEqual(keyboardHeatmapCounts(from: ["Shift++": 2]), ["Shift": 2, "=": 2])
+        XCTAssertEqual(keyboardHeatmapCounts(from: ["Cmd+Shift++": 1]), ["Cmd": 1, "Shift": 1, "=": 1])
+    }
+
+    func testMenuBarCompactNumberUsesAtMostThreeLeadingDigits() {
+        XCTAssertEqual(formatMenuBarCompactNumber(999), "999")
+        XCTAssertEqual(formatMenuBarCompactNumber(1_000), "1.00k")
+        XCTAssertEqual(formatMenuBarCompactNumber(3_249), "3.24k")
+        XCTAssertEqual(formatMenuBarCompactNumber(9_999), "9.99k")
+        XCTAssertEqual(formatMenuBarCompactNumber(10_300), "10.3k")
+        XCTAssertEqual(formatMenuBarCompactNumber(10_399), "10.3k")
+        XCTAssertEqual(formatMenuBarCompactNumber(99_999), "99.9k")
+        XCTAssertEqual(formatMenuBarCompactNumber(100_000), "100k")
+        XCTAssertEqual(formatMenuBarCompactNumber(999_999), "999k")
+        XCTAssertEqual(formatMenuBarCompactNumber(1_234_567), "1.23M")
+        XCTAssertEqual(formatMenuBarCompactNumber(10_349_999), "10.3M")
+    }
+
+    func testDailyStatsInitNormalizesDateToStartOfDay() {
+        let date = Date(timeIntervalSince1970: 1_710_099_123)
+
+        let stats = DailyStats(date: date)
+
+        XCTAssertEqual(stats.date, Calendar.current.startOfDay(for: date))
+        XCTAssertEqual(stats.scrollSessions, 0)
+    }
+
+    func testScrollSessionBeganChangedEndedCompletesOnce() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.mayBegin)), .none)
+        XCTAssertEqual(tracker.consume(scrollEvent(.began)), .began)
+        XCTAssertEqual(tracker.consume(scrollEvent(.changed)), .none)
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended)), .completed)
+        XCTAssertFalse(tracker.isActive)
+    }
+
+    func testExplicitPhaseCountsEvenWhenEventIsNotMarkedContinuous() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.began, isContinuous: false)), .began)
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended, isContinuous: false)), .completed)
+    }
+
+    func testCoreGraphicsScrollPhaseRawValuesAreMappedCentrally() {
+        XCTAssertEqual(ScrollEventPhase.began.rawValue, 1)
+        XCTAssertEqual(ScrollEventPhase.changed.rawValue, 2)
+        XCTAssertEqual(ScrollEventPhase.ended.rawValue, 4)
+        XCTAssertEqual(ScrollEventPhase.cancelled.rawValue, 8)
+        XCTAssertEqual(ScrollEventPhase.mayBegin.rawValue, 128)
+        XCTAssertEqual(ScrollMomentumPhase.began.rawValue, 1)
+        XCTAssertEqual(ScrollMomentumPhase.changed.rawValue, 2)
+        XCTAssertEqual(ScrollMomentumPhase.ended.rawValue, 3)
+    }
+
+    func testScrollSessionMultipleChangedEventsStillCompleteOnce() {
+        var tracker = ScrollSessionTracker()
+        let transitions = [
+            tracker.consume(scrollEvent(.began)),
+            tracker.consume(scrollEvent(.changed)),
+            tracker.consume(scrollEvent(.changed)),
+            tracker.consume(scrollEvent(.changed)),
+            tracker.consume(scrollEvent(.ended))
+        ]
+
+        XCTAssertEqual(transitions.filter { $0 == .completed }.count, 1)
+    }
+
+    func testMomentumPhasesDoNotCreateOrCompleteScrollSession() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.none, momentum: .began)), .none)
+        XCTAssertEqual(tracker.consume(scrollEvent(.none, momentum: .changed)), .none)
+        XCTAssertEqual(tracker.consume(scrollEvent(.none, momentum: .ended)), .none)
+        XCTAssertFalse(tracker.isActive)
+    }
+
+    func testMomentumDoesNotCompleteAnActiveScrollSession() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.began)), .began)
+        XCTAssertEqual(tracker.consume(scrollEvent(.none, momentum: .began)), .none)
+        XCTAssertEqual(tracker.consume(scrollEvent(.none, momentum: .changed)), .none)
+        XCTAssertEqual(tracker.consume(scrollEvent(.none, momentum: .ended)), .none)
+        XCTAssertTrue(tracker.isActive)
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended)), .completed)
+    }
+
+    func testMayBeginDoesNotActivateOrInterruptScrollSession() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.mayBegin)), .none)
+        XCTAssertFalse(tracker.isActive)
+        XCTAssertEqual(tracker.consume(scrollEvent(.began)), .began)
+        XCTAssertEqual(tracker.consume(scrollEvent(.mayBegin)), .none)
+        XCTAssertTrue(tracker.isActive)
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended)), .completed)
+    }
+
+    func testSecondBeganBeforeEndedStillCompletesOnlyOneSession() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.began)), .began)
+        XCTAssertEqual(tracker.consume(scrollEvent(.began)), .began)
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended)), .completed)
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended)), .none)
+        XCTAssertFalse(tracker.isActive)
+    }
+
+    func testUnknownScrollPhaseRawValuesAreIgnored() {
+        var tracker = ScrollSessionTracker()
+        let event = ScrollEventMetadata(
+            scrollPhaseRaw: 999,
+            momentumPhaseRaw: 999,
+            isContinuous: true
+        )
+
+        XCTAssertEqual(tracker.consume(event), .none)
+        XCTAssertFalse(tracker.isActive)
+    }
+
+    func testCancelledScrollSessionDoesNotComplete() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.began)), .began)
+        XCTAssertEqual(tracker.consume(scrollEvent(.cancelled)), .cancelled)
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended)), .none)
+        XCTAssertFalse(tracker.isActive)
+    }
+
+    func testEndedWithoutBeganDoesNotCompleteScrollSession() {
+        var tracker = ScrollSessionTracker()
+
+        XCTAssertEqual(tracker.consume(scrollEvent(.ended)), .none)
+        XCTAssertFalse(tracker.isActive)
+    }
+
+    func testTwoCompleteScrollSessionsAreCountedIndependently() {
+        var tracker = ScrollSessionTracker()
+        var completed = 0
+
+        for phase in [ScrollEventPhase.began, .changed, .ended, .began, .ended] {
+            if tracker.consume(scrollEvent(phase)) == .completed {
+                completed += 1
+            }
+        }
+
+        XCTAssertEqual(completed, 2)
+    }
+
+    func testScrollSessionAggregationSumsHistoryWithoutOverflow() {
+        XCTAssertEqual(aggregateScrollSessionCounts([2, 3, 4]), 9)
+        XCTAssertEqual(aggregateScrollSessionCounts([Int.max, 1]), Int.max)
+        XCTAssertEqual(aggregateScrollSessionCounts([-3, 2]), 2)
+    }
+
+    func testDailyStatsCorrectionRateCountsDeleteVariants() {
+        var stats = DailyStats(date: Date())
+        stats.keyPresses = 20
+        stats.keyPressCounts = [
+            "Delete": 2,
+            "Shift + Delete": 3,
+            "Command+ForwardDelete": 1,
+            "Space": 9
+        ]
+
+        XCTAssertEqual(stats.correctionRate, 0.3, accuracy: 0.0001)
+    }
+
+    func testDailyStatsCorrectionRateIgnoresNegativePersistedCounts() {
+        var stats = DailyStats(date: Date())
+        stats.keyPresses = 10
+        stats.keyPressCounts = [
+            "Delete": -50,
+            "Command+ForwardDelete": 2
+        ]
+
+        XCTAssertEqual(stats.correctionRate, 0.2, accuracy: 0.0001)
+    }
+
+    func testDailyStatsInputRatioHandlesZeroClicks() {
+        var stats = DailyStats(date: Date())
+        stats.keyPresses = 8
+
+        XCTAssertEqual(stats.inputRatio, .infinity)
+    }
+
+    func testDailyStatsHasAnyActivityDetectsNestedAppStats() {
+        var stats = DailyStats(date: Date())
+        stats.appStats["com.test.app"] = AppStats(bundleId: "com.test.app", displayName: "Test")
+
+        XCTAssertTrue(stats.hasAnyActivity)
+    }
+
+    func testDailyStatsHasAnyActivityDetectsScrollSessionOnly() {
+        var stats = DailyStats(date: Date())
+        stats.scrollSessions = 1
+
+        XCTAssertTrue(stats.hasAnyActivity)
+    }
+
+    func testDailyStatsCodableBackfillsLegacyOtherClicks() throws {
+        let json = """
+        {
+          "date": 1710028800,
+          "keyPresses": 4,
+          "otherClicks": 7,
+          "mouseDistance": 15.5,
+          "scrollDistance": 9
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(DailyStats.self, from: json)
+
+        XCTAssertEqual(decoded.sideBackClicks, 7)
+        XCTAssertEqual(decoded.sideForwardClicks, 0)
+        XCTAssertEqual(decoded.totalClicks, 7)
+        XCTAssertEqual(decoded.mouseDistance, 15.5, accuracy: 0.0001)
+        XCTAssertEqual(decoded.scrollSessions, 0)
+    }
+
+    func testDailyStatsDecodeMissingFieldsUsesSafeDefaults() throws {
+        let decoded = try JSONDecoder().decode(DailyStats.self, from: Data("{}".utf8))
+
+        XCTAssertEqual(decoded.keyPresses, 0)
+        XCTAssertEqual(decoded.keyPressCounts, [:])
+        XCTAssertEqual(decoded.totalClicks, 0)
+        XCTAssertEqual(decoded.mouseDistance, 0)
+        XCTAssertEqual(decoded.scrollDistance, 0)
+        XCTAssertEqual(decoded.scrollSessions, 0)
+        XCTAssertTrue(decoded.appStats.isEmpty)
+        XCTAssertEqual(decoded.peakKPS, 0)
+        XCTAssertEqual(decoded.peakCPS, 0)
+        XCTAssertFalse(decoded.hasAnyActivity)
+    }
+
+    func testDailyStatsDecodesLegacyDoubleAndCurrentIntegerPeaks() throws {
+        let json = #"{"peakKPS":12.75,"peakCPS":4}"#.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(DailyStats.self, from: json)
+
+        XCTAssertEqual(decoded.peakKPS, 12)
+        XCTAssertEqual(decoded.peakCPS, 4)
+    }
+
+    func testDailyStatsExplicitSideClicksOverrideLegacyOtherClicks() throws {
+        let json = #"{"sideBackClicks":2,"sideForwardClicks":3,"otherClicks":100}"#.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(DailyStats.self, from: json)
+
+        XCTAssertEqual(decoded.sideBackClicks, 2)
+        XCTAssertEqual(decoded.sideForwardClicks, 3)
+        XCTAssertEqual(decoded.totalClicks, 5)
+    }
+
+    func testDailyStatsDecodeRejectsMalformedCounterType() {
+        let json = #"{"keyPresses":"12"}"#.data(using: .utf8)!
+
+        XCTAssertThrowsError(try JSONDecoder().decode(DailyStats.self, from: json))
+    }
+
+    func testDailyStatsScrollSessionsCodableRoundTrip() throws {
+        var original = DailyStats(date: Date(timeIntervalSince1970: 1_710_028_800))
+        original.scrollSessions = 12
+        original.scrollDistance = 345.5
+
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(DailyStats.self, from: data)
+
+        XCTAssertEqual(decoded.scrollSessions, 12)
+        XCTAssertEqual(decoded.scrollDistance, 345.5, accuracy: 0.0001)
+    }
+
+    func testAllTimeStatsInitialStartsEmpty() {
+        let stats = AllTimeStats.initial()
+
+        XCTAssertEqual(stats.totalKeyPresses, 0)
+        XCTAssertEqual(stats.totalClicks, 0)
+        XCTAssertEqual(stats.totalScrollSessions, 0)
+        XCTAssertEqual(stats.correctionRate, 0)
+        XCTAssertEqual(stats.inputRatio, 0)
+        XCTAssertNil(stats.firstDate)
+        XCTAssertNil(stats.lastDate)
+    }
+
+    func testAllTimeStatsCorrectionRateAndInputRatioUseAggregates() {
+        let stats = AllTimeStats(
+            totalKeyPresses: 12,
+            totalLeftClicks: 2,
+            totalRightClicks: 1,
+            totalMiddleClicks: 0,
+            totalSideBackClicks: 1,
+            totalSideForwardClicks: 0,
+            totalMouseDistance: 0,
+            totalScrollDistance: 0,
+            totalScrollSessions: 0,
+            keyPressCounts: [
+                "Option + Delete": 2,
+                "ForwardDelete": 1,
+                "A": 9
+            ],
+            firstDate: nil,
+            lastDate: nil,
+            activeDays: 0,
+            maxDailyKeyPresses: 0,
+            maxDailyKeyPressesDate: nil,
+            maxDailyClicks: 0,
+            maxDailyClicksDate: nil,
+            mostActiveWeekday: nil,
+            keyActiveDays: 0,
+            clickActiveDays: 0
+        )
+
+        XCTAssertEqual(stats.totalClicks, 4)
+        XCTAssertEqual(stats.correctionRate, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(stats.inputRatio, 3.0, accuracy: 0.0001)
+    }
+
+    func testKeyboardHeatmapAggregationSeparatesLeftAndRightModifierKeys() {
+        let aggregated = keyboardHeatmapCounts(from: [
+            "LeftShift+A": 3,
+            "RightShift+A": 2,
+            "LeftOption+B": 4,
+            "RightOption+B": 1,
+            "LeftCmd+C": 5,
+            "RightCmd+C": 2,
+            "Shift": 7
+        ])
+
+        XCTAssertEqual(aggregated["LeftShift"], 3)
+        XCTAssertEqual(aggregated["RightShift"], 2)
+        XCTAssertEqual(aggregated["LeftOption"], 4)
+        XCTAssertEqual(aggregated["RightOption"], 1)
+        XCTAssertEqual(aggregated["LeftCmd"], 5)
+        XCTAssertEqual(aggregated["RightCmd"], 2)
+        XCTAssertEqual(aggregated["Shift"], 7)
+        XCTAssertEqual(aggregated["A"], 5)
+        XCTAssertEqual(aggregated["B"], 5)
+        XCTAssertEqual(aggregated["C"], 7)
+    }
+
+    func testKeyboardEventModifierNamesUsesSideSpecificFlagsForShiftOptionAndCommand() {
+        let rawFlags = CGEventFlags.maskShift.rawValue |
+            CGEventFlags.maskAlternate.rawValue |
+            CGEventFlags.maskCommand.rawValue |
+            UInt64(NX_DEVICERSHIFTKEYMASK) |
+            UInt64(NX_DEVICELALTKEYMASK) |
+            UInt64(NX_DEVICERCMDKEYMASK)
+
+        let names = keyboardEventModifierNames(rawFlags: rawFlags, keyCode: 0)
+
+        XCTAssertEqual(names, ["RightCmd", "RightShift", "LeftOption"])
+    }
+
+    func testStandaloneModifierHelpersRecognizeLeftAndRightModifierKeys() {
+        XCTAssertEqual(standaloneModifierHeatmapKeyName(for: 56), "LeftShift")
+        XCTAssertEqual(standaloneModifierHeatmapKeyName(for: 60), "RightShift")
+        XCTAssertEqual(standaloneModifierHeatmapKeyName(for: 58), "LeftOption")
+        XCTAssertEqual(standaloneModifierHeatmapKeyName(for: 61), "RightOption")
+        XCTAssertEqual(standaloneModifierHeatmapKeyName(for: 55), "LeftCmd")
+        XCTAssertEqual(standaloneModifierHeatmapKeyName(for: 54), "RightCmd")
+        XCTAssertTrue(isStandaloneModifierPress(rawFlags: UInt64(NX_DEVICERSHIFTKEYMASK), keyCode: 60))
+        XCTAssertTrue(isStandaloneModifierPress(rawFlags: UInt64(NX_DEVICELSHIFTKEYMASK), keyCode: 60))
+    }
+
+    func testModifierStandaloneTrackerCommitsSingleModifierPressOnRelease() {
+        var tracker = ModifierStandaloneTracker()
+
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 56, rawFlags: UInt64(NX_DEVICELSHIFTKEYMASK)))
+
+        let committed = tracker.handleFlagsChanged(keyCode: 56, rawFlags: 0)
+
+        XCTAssertEqual(committed, "LeftShift")
+    }
+
+    func testModifierStandaloneTrackerSuppressesStandaloneCountWhenModifierIsUsedInCombo() {
+        var tracker = ModifierStandaloneTracker()
+
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 55, rawFlags: UInt64(NX_DEVICELCMDKEYMASK)))
+        tracker.consumePendingModifiers(
+            forKeyDownWith: UInt64(NX_DEVICELCMDKEYMASK) | CGEventFlags.maskCommand.rawValue,
+            keyCode: 8
+        )
+
+        let committed = tracker.handleFlagsChanged(keyCode: 55, rawFlags: 0)
+
+        XCTAssertNil(committed)
+    }
+
+    func testModifierStandaloneTrackerSuppressesStandaloneCountWhenComboOnlyHasGenericModifierFlag() {
+        var tracker = ModifierStandaloneTracker()
+
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 54, rawFlags: UInt64(NX_DEVICERCMDKEYMASK)))
+        tracker.consumePendingModifiers(forKeyDownWith: CGEventFlags.maskCommand.rawValue, keyCode: 8)
+
+        let committed = tracker.handleFlagsChanged(keyCode: 54, rawFlags: 0)
+
+        XCTAssertNil(committed)
+    }
+
+    func testModifierStandaloneTrackerSuppressesAllPendingModifiersConsumedByCombo() {
+        var tracker = ModifierStandaloneTracker()
+
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 55, rawFlags: UInt64(NX_DEVICELCMDKEYMASK)))
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 60, rawFlags: UInt64(NX_DEVICELCMDKEYMASK | NX_DEVICERSHIFTKEYMASK)))
+        tracker.consumePendingModifiers(
+            forKeyDownWith: UInt64(NX_DEVICELCMDKEYMASK) |
+                UInt64(NX_DEVICERSHIFTKEYMASK) |
+                CGEventFlags.maskCommand.rawValue |
+                CGEventFlags.maskShift.rawValue,
+            keyCode: 7
+        )
+
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 60, rawFlags: UInt64(NX_DEVICELCMDKEYMASK)))
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 55, rawFlags: 0))
+    }
+
+    func testKeyBreakdownDisplayCountsAggregatesLeftAndRightModifierKeysForListDisplay() {
+        let counts = keyBreakdownDisplayCounts(from: [
+            "LeftCmd+C": 5,
+            "RightCmd+C": 2,
+            "LeftShift": 1,
+            "RightShift": 3,
+            "LeftOption+Delete": 4,
+            "RightOption+Delete": 1,
+            "A": 9
+        ])
+
+        XCTAssertEqual(counts["Cmd+C"], 7)
+        XCTAssertEqual(counts["Shift"], 4)
+        XCTAssertEqual(counts["Option+Delete"], 5)
+        XCTAssertEqual(counts["A"], 9)
+        XCTAssertNil(counts["LeftCmd+C"])
+        XCTAssertNil(counts["RightShift"])
+    }
+
+    func testKeyBreakdownCanonicalizesAliasesLiteralPlusAndDuplicateParts() {
+        let counts = keyBreakdownDisplayCounts(from: [
+            "Function+A": 2,
+            "Fn+A": 3,
+            "LeftCmd+LeftCmd+B": 4,
+            "Cmd++": 5,
+            "A": -100
+        ])
+
+        XCTAssertEqual(counts["Fn+A"], 5)
+        XCTAssertEqual(counts["Cmd+B"], 4)
+        XCTAssertEqual(counts["Cmd++"], 5)
+        XCTAssertNil(counts["A"])
+    }
+
+    func testKeyboardHeatmapIgnoresNonpositiveCountsWithoutErasingValidCounts() {
+        let counts = keyboardHeatmapCounts(from: [
+            "LeftCmd+A": 2,
+            "A": -100,
+            "B": 0
+        ])
+
+        XCTAssertEqual(counts["LeftCmd"], 2)
+        XCTAssertEqual(counts["A"], 2)
+        XCTAssertNil(counts["B"])
+    }
+
+    func testModifierStandaloneTrackerUsesSideSpecificRawFlagsWhenKeyCodeLooksGeneric() {
+        var tracker = ModifierStandaloneTracker()
+
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 56, rawFlags: UInt64(NX_DEVICERSHIFTKEYMASK)))
+
+        let committed = tracker.handleFlagsChanged(keyCode: 56, rawFlags: 0)
+
+        XCTAssertEqual(committed, "RightShift")
+    }
+
+    func testModifierStandaloneTrackerReleasesPendingModifierByFamilyWhenReleaseKeyCodeDiffers() {
+        var tracker = ModifierStandaloneTracker()
+
+        XCTAssertNil(tracker.handleFlagsChanged(keyCode: 60, rawFlags: UInt64(NX_DEVICERSHIFTKEYMASK)))
+
+        let committed = tracker.handleFlagsChanged(keyCode: 56, rawFlags: 0)
+
+        XCTAssertEqual(committed, "RightShift")
+    }
+}
+
+private func scrollEvent(
+    _ phase: ScrollEventPhase,
+    momentum: ScrollMomentumPhase = .none,
+    isContinuous: Bool = true
+) -> ScrollEventMetadata {
+    ScrollEventMetadata(
+        scrollPhaseRaw: phase.rawValue,
+        momentumPhaseRaw: momentum.rawValue,
+        isContinuous: isContinuous
+    )
+}

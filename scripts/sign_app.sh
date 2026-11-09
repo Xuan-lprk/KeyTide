@@ -1,23 +1,23 @@
 #!/bin/bash
-# Inner-first ad-hoc 签名 KeyStats.app 及其内嵌 KeyStatsHelper.app。
+# Inner-first ad-hoc 签名 Keytide.app 及其内嵌 KeyStatsHelper.app。
 #
 # 先签 helper（用 helper 自己的 entitlements），再签外层主 app 且不带 --deep。
 # 这样 helper 的 cdhash 只取决于自身字节，跨版本升级若 helper 未变 ⇒ cdhash 稳定
 # ⇒ TCC 辅助功能授权保留 ⇒ 用户升级后无需重新授权。
 #
-# 用法: ./scripts/sign_app.sh <path-to-KeyStats.app>
+# 用法: ./scripts/sign_app.sh <path-to-Keytide.app>
 
 set -e
 
 APP_PATH="$1"
 if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-    echo "❌ 用法: $0 <path-to-KeyStats.app>" >&2
+    echo "❌ 用法: $0 <path-to-Keytide.app>" >&2
     exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-APP_ENTITLEMENTS="$PROJECT_DIR/KeyStats/KeyStats.entitlements"
+APP_ENTITLEMENTS="$PROJECT_DIR/Keytide/Keytide.entitlements"
 HELPER_ENTITLEMENTS="$PROJECT_DIR/KeyStatsHelper/KeyStatsHelper.entitlements"
 HELPER_APP_PATH="$APP_PATH/Contents/Resources/KeyStatsHelper.app"
 

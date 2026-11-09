@@ -1,21 +1,11 @@
 #!/bin/bash
-
+# Compatibility alias: local version preparation only, despite the legacy name.
 set -euo pipefail
-
+if [[ $# -ne 1 || "$1" != v* ]]; then
+    echo "Usage: ./scripts/publish_release.sh vX.Y.Z[-beta.N]" >&2
+    echo "This deprecated alias only prepares local metadata; it does not publish." >&2
+    exit 1
+fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-TAG="${1:-}"
-if [[ -z "$TAG" ]]; then
-    echo "Usage: $0 <tag> [output-dir]"
-    echo "Example: $0 v1.8 build/release/v1.8"
-    exit 1
-fi
-
-VERSION="${TAG#v}"
-if [[ -z "$VERSION" || "$VERSION" == "$TAG" ]]; then
-    echo "Error: tag must include a leading 'v', e.g. v1.8"
-    exit 1
-fi
-
-echo "publish_release.sh is deprecated. Forwarding to release.sh..."
-exec "$SCRIPT_DIR/release.sh" "$VERSION" "${2:-}"
+echo "Deprecated: use ./scripts/release.sh. This command only prepares local metadata."
+exec "$SCRIPT_DIR/release.sh" "${1#v}"

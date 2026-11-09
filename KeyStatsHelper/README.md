@@ -1,10 +1,10 @@
-# KeyStatsHelper 原生采集包
+# Keytide 原生采集包（兼容服务名 KeyStatsHelper）
 
 `KeyStatsHelper/` 可以作为 macOS 13+、Swift 5.9+ 的独立 SwiftPM 包构建和测试，不依赖主 App、PostHog、统计存储或 Node.js。SwiftPM 与正式 Xcode `helper` target 直接编译同一份十个 Swift 源文件，没有复制实现或更改 XPC 协议。
 
 ## 构建与测试
 
-在 KeyStatsMac 仓库根目录运行：
+在 Keytide 仓库根目录运行：
 
 ```sh
 swift build --package-path KeyStatsHelper \
