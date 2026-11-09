@@ -46,7 +46,7 @@ Keytide 是 macOS 13+ 原生菜单栏应用，主工程使用 Swift 5、AppKit�
 - 后台采集保持极低 CPU、内存、wakeups 和磁盘写入。
 - 漂亮视觉只在用户正在查看时消耗额外性能。
 
-当前近期重点是 macOS 产品本身。`KeyStats.Windows/` 和多设备同步已经存在，但除非用户明确指定，不要主动扩展 Windows、同步协议或 Worker 基础设施。
+当前仓库以独立 macOS 产品为主。用户已要求移除 Windows 客户端、专用 CI、Scoop 脚本及专用文档，不要重新恢复这些目录。独立插件、Worker 服务端及仓库级契约和对应工作流也已移除。macOS 内已有同步客户端与持久化兼容保留；不要恢复已移除的独立项目。
 
 ## 最高优先级：Git 与远端安全
 
@@ -130,7 +130,7 @@ macOS input events
 - `KeyStatsHelper/Package.swift`、`KeyStatsHelper/README.md`、`KeyStatsHelper/Tests/`
   - 独立、无第三方依赖的原生 Helper SwiftPM 构建／测试入口，直接复用正式十份 Swift 源码。SwiftPM 裸可执行文件不替代签名 `.app` 或既有安装流程，不以 `swift run` 启动已安装的服务。
   - 新包清单、README 和具体测试文件通过主工程 helper 同步目录例外排除；新增测试必须同步排除其路径，避免 XCTest 进入生产。根 SwiftPM 的 `KeytideEventCore` 继续直接编译原有四份事件源码。
-  - c3502 的本地源码评估见 Helper README：当前远程通知／请求与 WebSocket 传输未完成，只能作为未来聚合快照插件的候选。不得把原始按键／移动 payload 接入 c3502，不放宽现有 XPC 鉴权。
+  - 独立插件已从本仓库移除，其参考说明仅保留在本地忽略的 docs/local-reference/。不得向外部发送原始按键／移动 payload，不放宽现有 XPC 鉴权。
 - `KeyStatsHelper/EventTapController.swift`
   - Helper 内唯一正式 `CGEventTap` 所有者。
   - 使用 `.listenOnly` 的 `.cgSessionEventTap` 监听键盘、点击、滚轮和移动事件。
@@ -255,7 +255,7 @@ macOS input events
 - 正式 Growth 的数据只能来自 StatsManager 的 cumulative/display 查询，包含未落盘 currentStats 和既有 Sync display 语义；不得复制 prototype 的磁盘读取路径。Today 在打开/获得焦点、回到 Today、手动刷新时更新，不逐事件重绘。
 - 静态 3D 复用 `GrowthKeyboard3DRenderer` 的 80ms one-shot 合并、三帧 LRU、键位选择和取消 token。新帧呈现后再共同提交日期、次数和详情；等待或失焦取消时保留最后完整帧及最新呈现确认，恢复后确认最新图像，不在隐藏期间确认或自动继续播放。两种模型的 Replay 均等当前图像呈现后推进，到 Today 停止；没有永久 Timer / DisplayLink。
 - `KeyboardLayout` 提供共享 identity/结构；保留已认可的 Editorial 比例、Usage palette 和 stable progress。优先级为易读性、高级感、性能、3D 程度；不因收尾重设计模型、布局、配色或统计语义。
-- 正式源码与 Xcode target 不依赖 `Prototypes/`。实验的 `@testable` / layer-introspection bridge、plist reader、OBJ 资产不属于生产 API；历史实验保留本地，未通过的 demo 不加入本轮提交。已提交的旧 Porcelain 也不为此改写历史。
+- 正式源码与 Xcode target 不依赖历史原型。2026-11-09 用户明确要求发布前删除无用文件，`Prototypes/`、旧图标初稿和历史构建归档已从工作区清理；不要重新创建或恢复它们。实验的 `@testable` / layer-introspection bridge、plist reader、OBJ 资产不属于生产 API；此前已提交的旧 Porcelain 可从 Git 历史查询。
 - 后续新造型或交互目标继续遵循 `Plan → Approval → Minimal Prototype → Visual Review → Integration`，每次只做一个经过验收的小目标。当前模型已完成相应授权，不重复要求从四键开始；新需求不能借收尾自动扩展。
 - 原型性能不等于正式 Growth 性能，11 键数据不能代表正式 77 键。构建、拓扑或单测通过不能代替视觉、GUI 和能耗验收。
 

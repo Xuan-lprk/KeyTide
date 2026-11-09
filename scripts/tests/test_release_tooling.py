@@ -48,7 +48,7 @@ class ReleaseToolingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / 'scripts').mkdir()
-        for script in ('release.sh', 'publish_release.sh', 'build_dmg.sh'):
+        for script in ('release.sh', 'build_dmg.sh'):
             shutil.copy2(REPO / 'scripts' / script, self.root / 'scripts' / script)
         for script in ('check_vendored_helper.sh', 'embed_vendored_helper.sh', 'sign_app.sh'):
             p = self.root / 'scripts' / script
@@ -151,11 +151,6 @@ class ReleaseToolingTests(unittest.TestCase):
         prepared = p.read_bytes()
         self.assertNotEqual(self.run_script('release.sh', 'invalid').returncode, 0)
         self.assertEqual(prepared, p.read_bytes())
-
-    def test_legacy_alias_prepares_locally_and_rejects_old_output_argument(self):
-        self.assertEqual(self.run_script('publish_release.sh', 'v2.0.0').returncode, 0)
-        self.assertEqual(self.commands(), '')
-        self.assertNotEqual(self.run_script('publish_release.sh', 'v2.0.0', 'dist').returncode, 0)
 
 
 if __name__ == '__main__':

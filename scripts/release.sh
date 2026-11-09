@@ -48,7 +48,7 @@ def update(match):
 
 path.write_text(pattern.sub(update, source))
 print(f"Prepared macOS version {version}, build {next_build} locally.")
-print("Helper and Windows metadata are unchanged. No Git or remote actions performed.")
+print("Helper metadata is unchanged. No Git or remote actions performed.")
 PYTHON
 
 echo "Review the version diff, then build with ./scripts/build_dmg.sh."

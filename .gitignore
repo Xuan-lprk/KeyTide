@@ -59,3 +59,11 @@ __pycache__/
 
 # Local project handoff notes
 /PROJECT.md
+
+# Local design/review notes; retain files without publishing them
+/docs/reviews/
+/docs/superpowers/
+/docs/menu-ui-styles.md
+/docs/local-reference/
+/.agents/
+/.github/instructions/
