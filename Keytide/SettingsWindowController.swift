@@ -11,10 +11,11 @@ final class SettingsWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none
         window.titlebarAppearsTransparent = true
-        window.styleMask.insert(.fullSizeContentView)
+        window.styleMask.insert(.resizable)
         window.isMovableByWindowBackground = true
         window.backgroundColor = .windowBackgroundColor
-        window.setContentSize(NSSize(width: 520, height: 720))
+        window.setContentSize(NSSize(width: 840, height: 650))
+        window.contentMinSize = NSSize(width: 800, height: 600)
         window.isReleasedWhenClosed = false
         window.center()
         super.init(window: window)

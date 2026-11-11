@@ -35,7 +35,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if AppLaunchMode.current == .normal {
             _ = UpdateManager.shared
         }
-        SyncCoordinator.shared.start()
 
         setupApplicationMenu()
         setupWindowMenu()

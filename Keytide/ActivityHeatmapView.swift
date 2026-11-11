@@ -9,6 +9,33 @@ final class ActivityHeatmapView: NSView {
         var total: Int { keyPresses + clicks }
     }
 
+    enum Metric: Int, CaseIterable {
+        case combined, keys, clicks
+
+        var title: String {
+            NSLocalizedString("heatmap.metric." + ["combined", "keys", "clicks"][rawValue], comment: "")
+        }
+
+        func value(for activity: DayActivity) -> Int {
+            switch self {
+            case .combined: return activity.total
+            case .keys: return activity.keyPresses
+            case .clicks: return activity.clicks
+            }
+        }
+    }
+
+    var metric: Metric = .combined {
+        didSet {
+            hoveredIndex = nil
+            hideTooltip()
+            updateAccessibility()
+            needsDisplay = true
+        }
+    }
+    var onSelectionChanged: ((DayActivity?) -> Void)?
+    private(set) var selectedActivity: DayActivity?
+
     // MARK: - 配置
     private let monthLabelHeight: CGFloat = 14
     private let weekdayLabelWidth: CGFloat = 28
@@ -23,6 +50,7 @@ final class ActivityHeatmapView: NSView {
     private var cellSpacing: CGFloat = 2
     private var weeksCount: Int = 53
     private var didInitialLayout = false
+    private var layoutWidth: CGFloat = -1
     private var gridOffsetX: CGFloat = 0
     private var gridWidth: CGFloat = 0
 
@@ -32,11 +60,124 @@ final class ActivityHeatmapView: NSView {
     // MARK: - 数据
     var activityData: [DayActivity] = [] {
         didSet {
+            let previousDate = selectedDate
+            selectedIndex = previousDate.flatMap { date in
+                activityData.firstIndex { Calendar.current.isDate($0.date, inSameDayAs: date) }
+            }
+            selectedDate = selectedIndex.map { activityData[$0].date }
+            let previousSelection = selectedActivity
+            selectedActivity = selectedIndex.map { activityData[$0] }
+            let selectionChanged = previousSelection?.date != selectedActivity?.date ||
+                previousSelection?.keyPresses != selectedActivity?.keyPresses ||
+                previousSelection?.clicks != selectedActivity?.clicks
+            if selectionChanged { onSelectionChanged?(selectedActivity) }
+            hoveredIndex = nil
+            hideTooltip()
             weeksCount = (activityData.count + 6) / 7
+            updateAccessibility()
             didInitialLayout = false
             cellRects.removeAll()
             needsLayout = true
             needsDisplay = true
+        }
+    }
+
+    /// Uses the existing cumulative Growth destination; daily totals remain in this view.
+    var onOpenDay: ((Date) -> Void)?
+    private(set) var selectedIndex: Int?
+    private var selectedDate: Date?
+    private var windowObservers: [NSObjectProtocol] = []
+
+    override var acceptsFirstResponder: Bool { !activityData.isEmpty }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        if selectedIndex == nil { selectDay(at: activityData.count - 1) }
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        hideTooltip()
+        needsDisplay = true
+        return super.resignFirstResponder()
+    }
+
+    func selectDay(at index: Int) {
+        guard activityData.indices.contains(index) else { return }
+        selectedIndex = index
+        selectedDate = activityData[index].date
+        selectedActivity = activityData[index]
+        onSelectionChanged?(selectedActivity)
+        hoveredIndex = nil
+        updateAccessibility()
+        updateTooltip()
+        needsDisplay = true
+        NSAccessibility.post(element: self, notification: .valueChanged)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        guard let index = cellRects.firstIndex(where: { $0.contains(location) }) else {
+            selectedIndex = nil
+            selectedDate = nil
+            selectedActivity = nil
+            onSelectionChanged?(nil)
+            hoveredIndex = nil
+            hideTooltip()
+            updateAccessibility()
+            needsDisplay = true
+            return
+        }
+        window?.makeFirstResponder(self)
+        selectDay(at: index)
+        if event.clickCount == 2 { _ = accessibilityPerformPress() }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard !activityData.isEmpty else { return super.keyDown(with: event) }
+        let current = selectedIndex ?? activityData.count - 1
+        switch event.keyCode {
+        case 123: selectDay(at: max(0, current - 7))
+        case 124: selectDay(at: min(activityData.count - 1, current + 7))
+        case 125: selectDay(at: min(activityData.count - 1, current + 1))
+        case 126: selectDay(at: max(0, current - 1))
+        case 115: selectDay(at: 0)
+        case 119: selectDay(at: activityData.count - 1)
+        case 36, 76: _ = accessibilityPerformPress()
+        case 48:
+            if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(self) }
+            else { window?.selectNextKeyView(self) }
+        case 53:
+            selectedIndex = nil
+            selectedDate = nil
+            selectedActivity = nil
+            onSelectionChanged?(nil)
+            hoveredIndex = nil
+            updateAccessibility()
+            hideTooltip()
+            needsDisplay = true
+        default: super.keyDown(with: event)
+        }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let index = selectedIndex, activityData.indices.contains(index), let onOpenDay else { return false }
+        hideTooltip()
+        onOpenDay(activityData[index].date)
+        return true
+    }
+
+    private func updateAccessibility() {
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(NSLocalizedString("allTimeStats.heatmap", comment: "") + ", " + metric.title)
+        setAccessibilityHelp(NSLocalizedString("heatmap.navigationHint", comment: ""))
+        if let index = selectedIndex, activityData.indices.contains(index) {
+            let activity = activityData[index]
+            let date = DateFormatter.localizedString(from: activity.date, dateStyle: .medium, timeStyle: .none)
+            setAccessibilityValue(date + ", " + String(format: NSLocalizedString("heatmap.detailFormat", comment: ""), activity.keyPresses, activity.clicks))
+        } else {
+            setAccessibilityValue(NSLocalizedString("heatmap.noSelection", comment: ""))
         }
     }
 
@@ -62,26 +203,33 @@ final class ActivityHeatmapView: NSView {
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             switch level {
             case 0:
-                return isDark ? NSColor(white: 0.15, alpha: 1) : NSColor(white: 0.92, alpha: 1)
+                return isDark ? NSColor(white: 1, alpha: 0.08) : NSColor(white: 0, alpha: 0.055)
             case 1:
-                return isDark ? NSColor(red: 0.0, green: 0.43, blue: 0.18, alpha: 1) : NSColor(red: 0.61, green: 0.91, blue: 0.66, alpha: 1)
+                return (self.metric == .clicks ? NSColor.systemOrange : NSColor.systemBlue).withAlphaComponent(isDark ? 0.30 : 0.22)
             case 2:
-                return isDark ? NSColor(red: 0.0, green: 0.55, blue: 0.24, alpha: 1) : NSColor(red: 0.25, green: 0.77, blue: 0.39, alpha: 1)
+                return (self.metric == .clicks ? NSColor.systemOrange : NSColor.systemBlue).withAlphaComponent(isDark ? 0.50 : 0.45)
             case 3:
-                return isDark ? NSColor(red: 0.15, green: 0.68, blue: 0.38, alpha: 1) : NSColor(red: 0.19, green: 0.63, blue: 0.31, alpha: 1)
+                return (self.metric == .clicks ? NSColor.systemOrange : NSColor.systemBlue).withAlphaComponent(isDark ? 0.75 : 0.70)
             default:
-                return isDark ? NSColor(red: 0.22, green: 0.82, blue: 0.48, alpha: 1) : NSColor(red: 0.13, green: 0.43, blue: 0.22, alpha: 1)
+                return self.metric == .clicks ? .systemOrange : .systemBlue
             }
         }
     }
 
     // MARK: - 布局计算
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = frame.width != newSize.width
+        super.setFrameSize(newSize)
+        if widthChanged { needsLayout = true }
+    }
+
     override func layout() {
         super.layout()
-        guard !didInitialLayout, bounds.width > 0 else { return }
+        guard (!didInitialLayout || layoutWidth != bounds.width), bounds.width > 0 else { return }
         recalculateLayout()
         invalidateIntrinsicContentSize()
         didInitialLayout = true
+        layoutWidth = bounds.width
         hideTooltip()
     }
 
@@ -176,7 +324,7 @@ final class ActivityHeatmapView: NSView {
     }
 
     private func calculatePercentiles() -> [Int] {
-        let nonZero = activityData.map { $0.total }.filter { $0 > 0 }.sorted()
+        let nonZero = activityData.map { metric.value(for: $0) }.filter { $0 > 0 }.sorted()
         guard nonZero.count >= 4 else {
             guard let maxValue = nonZero.last else { return [] }
             if nonZero.count == 1 {
@@ -197,7 +345,16 @@ final class ActivityHeatmapView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        guard !activityData.isEmpty else { return }
+        guard !activityData.isEmpty else {
+            let text = NSLocalizedString("allTimeStats.noData", comment: "")
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 12),
+                .foregroundColor: NSColor.secondaryLabelColor
+            ]
+            let size = text.size(withAttributes: attributes)
+            text.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attributes)
+            return
+        }
         if cellRects.isEmpty { recalculateLayout() }
 
         let percentiles = calculatePercentiles()
@@ -205,11 +362,17 @@ final class ActivityHeatmapView: NSView {
         for (index, rect) in cellRects.enumerated() where index < activityData.count {
             guard rect.intersects(dirtyRect) else { continue }
             let activity = activityData[index]
-            let level = activityLevel(for: activity.total, percentiles: percentiles)
+            let level = activityLevel(for: metric.value(for: activity), percentiles: percentiles)
 
             let path = NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2)
             colorForLevel(level).setFill()
             path.fill()
+            if index == selectedIndex || index == hoveredIndex {
+                NSColor.controlAccentColor.setStroke()
+                let outline = NSBezierPath(roundedRect: rect.insetBy(dx: -1, dy: -1), xRadius: 3, yRadius: 3)
+                outline.lineWidth = index == selectedIndex ? 2 : 1
+                outline.stroke()
+            }
         }
 
         drawMonthLabels()
@@ -297,7 +460,7 @@ final class ActivityHeatmapView: NSView {
     }
 
     private func updateTooltip() {
-        guard let index = hoveredIndex,
+        guard let index = hoveredIndex ?? selectedIndex,
               index < activityData.count,
               index < cellRects.count else {
             hideTooltip()
@@ -340,6 +503,7 @@ final class ActivityHeatmapView: NSView {
 
         origin.x = max(hostBounds.minX, min(origin.x, hostBounds.maxX - tooltipSize.width))
 
+        origin.y = max(hostBounds.minY, min(origin.y, hostBounds.maxY - tooltipSize.height))
         tooltip.frame = NSRect(origin: origin, size: tooltipSize)
         tooltip.isHidden = false
     }
@@ -356,12 +520,13 @@ final class ActivityHeatmapView: NSView {
         let tooltip = HeatmapTooltipView()
         tooltip.translatesAutoresizingMaskIntoConstraints = true
         tooltip.isHidden = true
-        host.addSubview(tooltip, positioned: .above, relativeTo: self)
+        host.addSubview(tooltip, positioned: .above, relativeTo: nil)
         tooltipView = tooltip
         return tooltip
     }
 
     deinit {
+        windowObservers.forEach { NotificationCenter.default.removeObserver($0) }
         if let scrollObserver = scrollObserver {
             NotificationCenter.default.removeObserver(scrollObserver)
         }
@@ -377,6 +542,14 @@ final class ActivityHeatmapView: NSView {
         super.viewDidMoveToWindow()
         hideTooltip()
         configureScrollObserver()
+        windowObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        windowObservers.removeAll()
+        guard let window else { return }
+        for name in [NSWindow.didResignKeyNotification, NSWindow.willMiniaturizeNotification, NSWindow.willCloseNotification] {
+            windowObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                self?.hideTooltip()
+            })
+        }
     }
 
     private func configureScrollObserver() {

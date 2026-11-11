@@ -77,7 +77,7 @@ final class SystemMediaKeyTests: XCTestCase {
                 formatter.dateFormat = "yyyy-MM-dd"
                 return formatter
             }, notificationCenter: NotificationCenter(), schedulesAutomaticWork: false,
-            blocksLegacyImport: { false }, syncDisplayContext: { nil }, sendThresholdNotification: { _, _, _ in }))
+             sendThresholdNotification: { _, _, _ in }))
         let payload = try XCTUnwrap(PayloadBuilder.build(from: try event(NX_KEYTYPE_BRIGHTNESS_DOWN), type: SystemMediaKey.eventType))
         manager.incrementKeyPresses(keyName: try XCTUnwrap(SystemMediaKey.keyName(from: payload)))
         XCTAssertEqual(manager.currentStats.keyPresses, 1)

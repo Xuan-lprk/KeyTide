@@ -67,7 +67,7 @@ class ReleaseToolingTests(unittest.TestCase):
             p.chmod(0o755)
         self.log = self.root / 'commands.log'
         self.env = {**os.environ, 'PATH': str(self.root / 'bin') + ':' + os.environ['PATH'],
-                    'COMMAND_LOG': str(self.log), 'KEYSTATS_SYNC_SERVICE_URL': '',
+                    'COMMAND_LOG': str(self.log),
                     'KEYSTATS_RELEASE_VERSION': '', 'FAIL_BUILD': '', 'HELPER_HASH': 'fixture-hash'}
 
     def write_info(self, enabled):
@@ -93,7 +93,7 @@ class ReleaseToolingTests(unittest.TestCase):
         check = subprocess.run(['shasum', '-a', '256', '-c', 'SHA256SUMS'], cwd=output, capture_output=True)
         self.assertEqual(check.returncode, 0)
         self.assertEqual(self.commands().count('xcodebuild '), 1)
-        self.assertIn("'KEYSTATS_SYNC_SERVICE_URL='", self.commands())
+        self.assertNotIn("KEYSTATS_SYNC_SERVICE_URL", self.commands())
         self.assertNotIn('git ', self.commands())
 
     def test_build_failure_is_not_retried_or_published(self):
@@ -113,19 +113,17 @@ class ReleaseToolingTests(unittest.TestCase):
         self.assertNotIn('hdiutil ', self.commands())
 
     def test_invalid_configuration_fails_before_build(self):
-        for env in ({'KEYSTATS_SYNC_SERVICE_URL': 'http://example.com'},
-                    {'KEYSTATS_RELEASE_VERSION': '1.2.3;bad'}):
+        for env in ({'KEYSTATS_RELEASE_VERSION': '1.2.3;bad'},):
             with self.subTest(env=env):
                 self.assertNotEqual(self.run_script('build_dmg.sh', **env).returncode, 0)
         self.write_info(True)
         self.assertNotEqual(self.run_script('build_dmg.sh').returncode, 0)
         self.assertEqual(self.commands(), '')
 
-    def test_optional_production_url_and_version_are_passed(self):
-        result = self.run_script('build_dmg.sh', KEYSTATS_SYNC_SERVICE_URL='https://own.workers.dev',
-                                 KEYSTATS_RELEASE_VERSION='2.0.0')
+    def test_explicit_version_is_passed(self):
+        result = self.run_script('build_dmg.sh', KEYSTATS_RELEASE_VERSION='2.0.0')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("'KEYSTATS_SYNC_SERVICE_URL=https://own.workers.dev'", self.commands())
+        self.assertNotIn("KEYSTATS_SYNC_SERVICE_URL", self.commands())
         self.assertIn("'MARKETING_VERSION=2.0.0'", self.commands())
 
     def test_version_preparation_only_changes_main_app_metadata(self):

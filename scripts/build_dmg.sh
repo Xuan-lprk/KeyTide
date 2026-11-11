@@ -6,12 +6,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-# Validate configuration before building. No Sync URL is required for local use.
-SYNC_URL="${KEYSTATS_SYNC_SERVICE_URL:-}"
-if [[ -n "$SYNC_URL" && ! "$SYNC_URL" =~ ^https://[A-Za-z0-9.-]+\.workers\.dev/?$ ]]; then
-    echo "KEYSTATS_SYNC_SERVICE_URL must be empty or an https workers.dev URL." >&2
-    exit 1
-fi
 RELEASE_VERSION="${KEYSTATS_RELEASE_VERSION:-}"
 if [[ -n "$RELEASE_VERSION" && ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "KEYSTATS_RELEASE_VERSION must be numeric X.Y.Z." >&2
@@ -49,7 +43,6 @@ xcodebuild -project Keytide.xcodeproj \
     -archivePath "$ARCHIVE_PATH" \
     archive CODE_SIGN_IDENTITY="-" \
     ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
-    KEYSTATS_SYNC_SERVICE_URL="$SYNC_URL" \
     "${VERSION_SETTING[@]}" 2>&1 | tee "$RUN_DIR/xcodebuild.log"
 
 APP_PATH="$ARCHIVE_PATH/Products/Applications/Keytide.app"

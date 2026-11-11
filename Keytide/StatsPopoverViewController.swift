@@ -74,7 +74,6 @@ class StatsPopoverViewController: NSViewController {
     private var mouseDistanceView: StatItemView!
     private var scrollDistanceView: StatItemView!
 
-    
     // 底部按钮
     private var quitButton: NSButton!
     private var checkUpdatesButton: NSButton!
@@ -415,7 +414,6 @@ class StatsPopoverViewController: NSViewController {
         buttonStack.orientation = .horizontal
         buttonStack.spacing = 12
         buttonStack.translatesAutoresizingMaskIntoConstraints = false
-        
 
         checkUpdatesButton = NSButton(title: NSLocalizedString("button.checkUpdates", comment: ""), target: self, action: #selector(checkForUpdates))
         checkUpdatesButton.bezelStyle = .rounded
@@ -878,7 +876,6 @@ class StatsPopoverViewController: NSViewController {
         
         let trendSeries = StatsManager.shared.historyTrendSeries(range: range, metric: metric)
         chartView.apply(series: trendSeries.display,
-                        localSeries: trendSeries.local,
                         metric: metric,
                         range: range,
                         style: style,
@@ -1601,13 +1598,6 @@ class StatsChartView: NSView {
         }
     }
 
-    var localSeries: [(date: Date, value: Double)]? {
-        didSet {
-            hoverIndex = nil
-            needsDisplay = true
-        }
-    }
-    
     var metric: StatsManager.HistoryMetric = .keyPresses {
         didSet { needsDisplay = true }
     }
@@ -1654,7 +1644,6 @@ class StatsChartView: NSView {
     }
 
     func apply(series: [(date: Date, value: Double)],
-               localSeries: [(date: Date, value: Double)]?,
                metric: StatsManager.HistoryMetric,
                range: StatsManager.HistoryRange,
                style: Style,
@@ -1664,7 +1653,6 @@ class StatsChartView: NSView {
             addSlideTransition(direction: slideDirection ?? .right)
         }
         self.series = series
-        self.localSeries = localSeries
         self.metric = metric
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -1714,7 +1702,6 @@ class StatsChartView: NSView {
         let gridColor = NSColor.separatorColor.withAlphaComponent(gridAlpha)
         let axisColor = NSColor.separatorColor.withAlphaComponent(axisAlpha)
 
-
         let maxValue = maxSeriesValue()
         guard maxValue > 0 else {
             let text = NSLocalizedString("history.empty", comment: "")
@@ -1740,8 +1727,6 @@ class StatsChartView: NSView {
             drawBarChart(in: plotRect, maxValue: maxValue)
         }
 
-        drawLegend(in: backgroundRect)
-        
         drawHover(in: plotRect, maxValue: maxValue, backgroundRect: backgroundRect)
     }
     
@@ -1822,17 +1807,7 @@ class StatsChartView: NSView {
             dashPattern: [],
             dotRadius: 2.5
         )
-        if let localSeries = localSeries {
-            drawLineSeries(
-                localSeries,
-                in: rect,
-                maxValue: maxValue,
-                color: .systemOrange,
-                lineWidth: 1.75,
-                dashPattern: [5, 3],
-                dotRadius: 2
-            )
-        }
+
     }
 
     private func drawLineSeries(
@@ -1967,96 +1942,19 @@ class StatsChartView: NSView {
         let count = series.count
         guard count > 0 else { return }
         let stepX = rect.width / CGFloat(count)
-        let hasLocalSeries = localSeries?.count == count
-        let groupWidth = min(stepX * 0.72, 26)
-        let barSpacing: CGFloat = hasLocalSeries ? 2 : 0
-        let barWidth = hasLocalSeries ? (groupWidth - barSpacing) / 2 : min(stepX * 0.6, 22)
+        let barWidth = min(stepX * 0.6, 22)
         
         for (index, item) in series.enumerated() {
             let height = (CGFloat(item.value) / CGFloat(maxValue)) * rect.height
-            let groupX = rect.minX + CGFloat(index) * stepX + (stepX - groupWidth) / 2
-            let x = hasLocalSeries ? groupX : rect.minX + CGFloat(index) * stepX + (stepX - barWidth) / 2
+            let x = rect.minX + CGFloat(index) * stepX + (stepX - barWidth) / 2
             let barRect = NSRect(x: x, y: rect.minY, width: barWidth, height: height)
             let barPath = NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2)
             NSColor.systemBlue.setFill()
             barPath.fill()
 
-            if hasLocalSeries, let localItem = localSeries?[index] {
-                let localHeight = (CGFloat(localItem.value) / CGFloat(maxValue)) * rect.height
-                let localRect = NSRect(
-                    x: groupX + barWidth + barSpacing,
-                    y: rect.minY,
-                    width: barWidth,
-                    height: localHeight
-                )
-                let localPath = NSBezierPath(roundedRect: localRect, xRadius: 2, yRadius: 2)
-                NSColor.systemOrange.setFill()
-                localPath.fill()
-            }
         }
     }
 
-    private func drawLegend(in rect: NSRect) {
-        guard let localSeries = localSeries, localSeries.count == series.count else { return }
-
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
-            .foregroundColor: NSColor.secondaryLabelColor
-        ]
-        let valueFormat = NSLocalizedString("history.series.value", comment: "")
-        let hoverIndex = hoverIndex.flatMap { $0 < series.count ? $0 : nil }
-        let syncedLabel = legendLabel(
-            title: NSLocalizedString("history.series.synced", comment: ""),
-            value: hoverIndex.map { series[$0].value },
-            format: valueFormat
-        )
-        let localLabel = legendLabel(
-            title: NSLocalizedString("history.series.local", comment: ""),
-            value: hoverIndex.map { localSeries[$0].value },
-            format: valueFormat
-        )
-        let items: [(text: String, color: NSColor, dashed: Bool)] = [
-            (syncedLabel, .systemBlue, false),
-            (localLabel, .systemOrange, true)
-        ]
-        let sampleWidth: CGFloat = 14
-        let sampleSpacing: CGFloat = 4
-        let itemSpacing: CGFloat = 12
-        let widths = items.map { sampleWidth + sampleSpacing + $0.text.size(withAttributes: attributes).width }
-        let totalWidth = widths.reduce(0, +) + itemSpacing
-        var x = max(rect.minX + 8, rect.maxX - totalWidth - 8)
-        let textHeight = items.map { $0.text.size(withAttributes: attributes).height }.max() ?? 0
-        let textY = rect.maxY - textHeight - 7
-        let sampleY = textY + textHeight / 2
-
-        for (index, item) in items.enumerated() {
-            if style == .bar {
-                item.color.setFill()
-                NSBezierPath(roundedRect: NSRect(x: x, y: sampleY - 3, width: sampleWidth, height: 6), xRadius: 1.5, yRadius: 1.5).fill()
-            } else {
-                let path = NSBezierPath()
-                path.move(to: NSPoint(x: x, y: sampleY))
-                path.line(to: NSPoint(x: x + sampleWidth, y: sampleY))
-                if item.dashed {
-                    let pattern: [CGFloat] = [4, 2]
-                    pattern.withUnsafeBufferPointer { buffer in
-                        path.setLineDash(buffer.baseAddress, count: buffer.count, phase: 0)
-                    }
-                }
-                item.color.setStroke()
-                path.lineWidth = 2
-                path.stroke()
-            }
-            item.text.draw(at: NSPoint(x: x + sampleWidth + sampleSpacing, y: textY), withAttributes: attributes)
-            x += widths[index] + itemSpacing
-        }
-    }
-
-    private func legendLabel(title: String, value: Double?, format: String) -> String {
-        guard let value = value else { return title }
-        return String(format: format, title, formatValue(value))
-    }
-    
     private func drawHover(in rect: NSRect, maxValue: Double, backgroundRect: NSRect) {
         guard let hoverIndex = hoverIndex, hoverIndex >= 0, hoverIndex < series.count else { return }
         let xPositions = xPositions(in: rect)
@@ -2082,29 +1980,6 @@ class StatsChartView: NSView {
         NSColor.white.withAlphaComponent(0.9).setStroke()
         dot.lineWidth = 2
         dot.stroke()
-
-        if let localSeries = localSeries, hoverIndex < localSeries.count {
-            let localValue = localSeries[hoverIndex].value
-            let localY = yPosition(for: localValue, in: rect, maxValue: maxValue)
-            let localRadius: CGFloat = abs(localY - y) < 1 ? 6 : 5
-            let localRect = NSRect(
-                x: x - localRadius,
-                y: localY - localRadius,
-                width: localRadius * 2,
-                height: localRadius * 2
-            )
-            let localDot = NSBezierPath(ovalIn: localRect)
-            NSColor.systemOrange.setFill()
-            localDot.fill()
-            NSColor.white.withAlphaComponent(0.9).setStroke()
-            localDot.lineWidth = 1.5
-            localDot.stroke()
-
-            if abs(localY - y) < 1 {
-                NSColor.systemBlue.setFill()
-                NSBezierPath(ovalIn: NSRect(x: x - 3, y: y - 3, width: 6, height: 6)).fill()
-            }
-        }
 
         // hover 标签通过 NSVisualEffectView 子视图绘制，见 updateHoverLabels()
     }
@@ -2151,7 +2026,7 @@ class StatsChartView: NSView {
             leftPadding = 36
         }
         let rightPadding: CGFloat = 10
-        let topPadding: CGFloat = localSeries == nil ? 10 : 26
+        let topPadding: CGFloat = 10
         let bottomPadding: CGFloat = 20
         let width = max(1, rect.width - leftPadding - rightPadding)
         let height = max(1, rect.height - topPadding - bottomPadding)
@@ -2185,9 +2060,7 @@ class StatsChartView: NSView {
     }
 
     private func maxSeriesValue() -> Double {
-        let displayMax = series.map { $0.value }.max() ?? 0
-        let localMax = localSeries?.map { $0.value }.max() ?? 0
-        return max(displayMax, localMax)
+        series.map { $0.value }.max() ?? 0
     }
     
     private func formatValue(_ value: Double) -> String {

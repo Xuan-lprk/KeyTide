@@ -41,15 +41,6 @@ extension StatsManager.Environment {
             },
             notificationCenter: .default,
             schedulesAutomaticWork: true,
-            blocksLegacyImport: { SyncCoordinator.shared.blocksLegacyImport },
-            syncDisplayContext: {
-                let state = SyncCoordinator.shared.state
-                guard state.isConfigured, !state.needsRepair else { return nil }
-                return StatsManager.SyncDisplayContext(
-                    deviceId: state.deviceId,
-                    remoteSnapshots: RemoteShardCache.shared.snapshots(excludingDeviceId: state.deviceId)
-                )
-            },
             sendThresholdNotification: { metric, count, threshold in
                 let notificationMetric: NotificationManager.Metric
                 switch metric {

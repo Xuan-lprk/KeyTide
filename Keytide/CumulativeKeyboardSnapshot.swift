@@ -15,7 +15,7 @@ struct CumulativeKeyboardSnapshot: Equatable {
 
 enum CumulativeKeyboardTimeline {
     /// Input must be normalized history, with one complete DailyStats per canonical dayKey.
-    /// Date parsing, collision resolution, today replacement and sync aggregation belong
+    /// Date parsing, collision resolution, today replacement belong
     /// to the existing history provider. This layer never reinterprets date identities.
     ///
     /// Accumulation scans daily entries once. Materializing every cumulative dictionary

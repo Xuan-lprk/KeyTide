@@ -16,10 +16,7 @@ private struct StatsManagerTestContext {
     let calendar: Calendar
     let clock: MutableTestClock
 
-    func makeManager(
-        blocksLegacyImport: @escaping () -> Bool = { false },
-        syncDisplayContext: @escaping () -> StatsManager.SyncDisplayContext? = { nil }
-    ) -> StatsManager {
+    func makeManager() -> StatsManager {
         StatsManager(environment: StatsManager.Environment(
             userDefaults: defaults,
             now: { clock.now },
@@ -33,8 +30,6 @@ private struct StatsManagerTestContext {
             },
             notificationCenter: NotificationCenter(),
             schedulesAutomaticWork: false,
-            blocksLegacyImport: blocksLegacyImport,
-            syncDisplayContext: syncDisplayContext,
             sendThresholdNotification: { _, _, _ in }
         ))
     }
@@ -88,7 +83,7 @@ final class StatsManagerTests: XCTestCase {
         )
 
         let manager = context.makeManager()
-        let snapshot = manager.localSyncHistorySnapshot()
+        let snapshot = manager.localHistorySnapshot()
 
         XCTAssertEqual(manager.currentStats.keyPresses, 11)
         XCTAssertEqual(snapshot[context.dayKey(today)]?.keyPresses, 11)
@@ -177,7 +172,7 @@ final class StatsManagerTests: XCTestCase {
             ]
         )
 
-        let snapshot = context.makeManager().localSyncHistorySnapshot()
+        let snapshot = context.makeManager().localHistorySnapshot()
 
         XCTAssertEqual(snapshot["2026-01-01"]?.keyPresses, 11)
         XCTAssertEqual(snapshot["2026-01-02"]?.keyPresses, 22)
@@ -195,7 +190,7 @@ final class StatsManagerTests: XCTestCase {
             history: ["2026-05-10": makeStats(on: storedDate, keyPresses: 7)]
         )
 
-        let snapshot = context.makeManager().localSyncHistorySnapshot()
+        let snapshot = context.makeManager().localHistorySnapshot()
         let normalized = try XCTUnwrap(snapshot["2026-05-10"])
 
         XCTAssertEqual(normalized.keyPresses, 7)
@@ -214,7 +209,7 @@ final class StatsManagerTests: XCTestCase {
             history: ["2026-05-12": makeStats(on: date, keyPresses: 8)]
         )
 
-        let normalized = try XCTUnwrap(context.makeManager().localSyncHistorySnapshot()["2026-05-12"])
+        let normalized = try XCTUnwrap(context.makeManager().localHistorySnapshot()["2026-05-12"])
 
         XCTAssertEqual(normalized.keyPresses, 8)
         XCTAssertEqual(normalized.date, context.calendar.startOfDay(for: date))
@@ -231,7 +226,7 @@ final class StatsManagerTests: XCTestCase {
             history: ["legacy-entry": makeStats(on: date, keyPresses: 9)]
         )
 
-        let snapshot = context.makeManager().localSyncHistorySnapshot()
+        let snapshot = context.makeManager().localHistorySnapshot()
 
         XCTAssertNil(snapshot["legacy-entry"])
         XCTAssertEqual(snapshot["2026-05-13"]?.keyPresses, 9)
@@ -262,8 +257,8 @@ final class StatsManagerTests: XCTestCase {
             history: Dictionary(uniqueKeysWithValues: secondEntries)
         )
 
-        let firstResult = firstContext.makeManager().localSyncHistorySnapshot()["2026-05-14"]
-        let secondResult = secondContext.makeManager().localSyncHistorySnapshot()["2026-05-14"]
+        let firstResult = firstContext.makeManager().localHistorySnapshot()["2026-05-14"]
+        let secondResult = secondContext.makeManager().localHistorySnapshot()["2026-05-14"]
 
         XCTAssertEqual(firstResult?.keyPresses, 30)
         XCTAssertEqual(secondResult?.keyPresses, 30)
@@ -283,7 +278,7 @@ final class StatsManagerTests: XCTestCase {
             ]
         )
 
-        let snapshot = context.makeManager().localSyncHistorySnapshot()
+        let snapshot = context.makeManager().localHistorySnapshot()
 
         XCTAssertEqual(snapshot["2026-05-15"]?.keyPresses, 15)
     }
@@ -333,7 +328,7 @@ final class StatsManagerTests: XCTestCase {
             mode: .overwrite
         )
 
-        let snapshot = manager.localSyncHistorySnapshot()
+        let snapshot = manager.localHistorySnapshot()
         XCTAssertNil(snapshot[context.dayKey(localOnlyDay)])
         XCTAssertEqual(snapshot[context.dayKey(importedDay)]?.keyPresses, 3)
         XCTAssertEqual(snapshot[context.dayKey(today)]?.keyPresses, 7)
@@ -391,7 +386,7 @@ final class StatsManagerTests: XCTestCase {
             mode: .merge
         )
 
-        let snapshot = manager.localSyncHistorySnapshot()
+        let snapshot = manager.localHistorySnapshot()
         let merged = try XCTUnwrap(snapshot[context.dayKey(today)])
         let mergedApp = try XCTUnwrap(merged.appStats["com.test.editor"])
 
@@ -418,11 +413,11 @@ final class StatsManagerTests: XCTestCase {
 
         let manager = context.makeManager()
         manager.incrementKeyPresses(keyName: "A")
-        let before = manager.localSyncHistorySnapshot()
+        let before = manager.localHistorySnapshot()
 
         XCTAssertThrowsError(try manager.importStatsData(from: Data("not-json".utf8), mode: .overwrite))
 
-        let after = manager.localSyncHistorySnapshot()
+        let after = manager.localHistorySnapshot()
         XCTAssertEqual(manager.currentStats.keyPresses, 1)
         XCTAssertEqual(after[context.dayKey(context.day(offset: 0))]?.keyPresses, 1)
         XCTAssertEqual(after.count, before.count)
@@ -442,7 +437,7 @@ final class StatsManagerTests: XCTestCase {
         context.clock.now = secondDay
         manager.incrementKeyPresses(keyName: "B")
 
-        let snapshot = manager.localSyncHistorySnapshot()
+        let snapshot = manager.localHistorySnapshot()
         XCTAssertTrue(context.calendar.isDate(manager.currentStats.date, inSameDayAs: secondDay))
         XCTAssertEqual(manager.currentStats.keyPresses, 1)
         XCTAssertEqual(manager.currentStats.keyPressCounts, ["B": 1])
@@ -463,7 +458,7 @@ final class StatsManagerTests: XCTestCase {
         context.clock.now = secondDay
         manager.incrementKeyPresses(keyName: "B")
 
-        let snapshot = manager.localSyncHistorySnapshot()
+        let snapshot = manager.localHistorySnapshot()
         XCTAssertEqual(snapshot[context.dayKey(firstDay)]?.keyPresses, 2)
         XCTAssertEqual(snapshot[context.dayKey(firstDay)]?.keyPressCounts, ["A": 2])
         XCTAssertTrue(context.calendar.isDate(manager.currentStats.date, inSameDayAs: secondDay))
@@ -658,89 +653,31 @@ final class StatsManagerTests: XCTestCase {
         XCTAssertEqual(timeline[1].keyPressCounts, ["Cmd+C": 2, "A": 1])
     }
 
-    func testCumulativeKeyboardQueryMatchesGlobalDisplayAggregationWithoutChangingLocalHistory() throws {
-        let context = try makeContext(timeZone: TimeZone(secondsFromGMT: 0)!)
+
+
+
+
+    func testRetiredSyncStateDoesNotChangeLocalHistoryOrPersistence() throws {
+        let context = try makeContext()
         defer { context.cleanUp() }
+        let legacyState = Data("{\"isConfigured\":true}".utf8)
+        context.defaults.set(legacyState, forKey: "sync.state.v1")
+        context.defaults.set("legacy-device", forKey: "sync.installationDeviceId.v1")
         let today = context.day(offset: 0)
-        let yesterday = context.day(offset: -1)
-        let remoteOnlyDate = context.day(offset: -2)
-        var past = makeStats(on: yesterday, keyPresses: 4)
-        past.keyPressCounts = ["A": 4]
-        var current = makeStats(on: today, keyPresses: 2)
-        current.keyPressCounts = ["LeftCmd+C": 2]
-        try seed(defaults: context.defaults, current: current,
-                 history: [context.dayKey(yesterday): past])
-        let remote = [
-            CoreDaySnapshotV1(deviceId: "current", localDay: context.dayKey(today),
-                revision: 1, keyPresses: 100, keyPressCounts: ["Z": 100], clicks: .zero),
-            CoreDaySnapshotV1(deviceId: "other", localDay: context.dayKey(today),
-                revision: 1, keyPresses: 3, keyPressCounts: ["Cmd++": 3], clicks: .zero),
-            CoreDaySnapshotV1(deviceId: "other", localDay: context.dayKey(yesterday),
-                revision: 1, keyPresses: 5, keyPressCounts: ["B": 5], clicks: .zero),
-            CoreDaySnapshotV1(deviceId: "other", localDay: context.dayKey(remoteOnlyDate),
-                revision: 1, keyPresses: 7, keyPressCounts: ["Option+V": 7], clicks: .zero)
-        ]
-        let manager = context.makeManager(syncDisplayContext: {
-            StatsManager.SyncDisplayContext(deviceId: "current", remoteSnapshots: remote)
-        })
-        let before = context.defaults.dictionaryRepresentation() as NSDictionary
-
-        let timeline = manager.cumulativeKeyboardTimeline()
-        let latest = try XCTUnwrap(manager.cumulativeKeyboardSnapshot(asOf: today))
-
-        XCTAssertEqual(timeline.map(\.totalKeyPresses), [7, 16, 21])
-        XCTAssertEqual(timeline.first?.dayKey, context.dayKey(remoteOnlyDate))
-        XCTAssertEqual(timeline.first?.date, remoteOnlyDate)
-        XCTAssertEqual(latest, timeline.last)
-        XCTAssertEqual(latest.keyPressCounts,
-            ["Option+V": 7, "A": 4, "B": 5, "LeftCmd+C": 2, "Cmd++": 3])
-        XCTAssertEqual(latest.detailedKeyPresses, 21)
-        XCTAssertEqual(latest.totalKeyPresses, manager.getAllTimeStats().totalKeyPresses)
-        XCTAssertEqual(latest.keyPressCounts, manager.getAllTimeStats().keyPressCounts)
-        let local = manager.localSyncHistorySnapshot()
-        XCTAssertEqual(local[context.dayKey(today)]?.keyPresses, 2)
-        XCTAssertEqual(local[context.dayKey(yesterday)]?.keyPresses, 4)
-        XCTAssertNil(local[context.dayKey(remoteOnlyDate)])
-        XCTAssertEqual(context.defaults.dictionaryRepresentation() as NSDictionary, before)
-    }
-
-    func testKeyboardTrackingPeriodUsesDisplayHistoryAndCountsCalendarGaps() throws {
-        let context = try makeContext(timeZone: TimeZone(secondsFromGMT: 0)!)
-        defer { context.cleanUp() }
-        let today = context.day(offset: 0)
-        let first = context.day(offset: -3)
-        let mouseOnlyDay = context.day(offset: -4)
-        var mouseOnly = makeStats(on: mouseOnlyDay)
-        mouseOnly.leftClicks = 5
-        try seed(defaults: context.defaults, current: makeStats(on: today, keyPresses: 3),
-                 history: [context.dayKey(mouseOnlyDay): mouseOnly,
-                           context.dayKey(context.day(offset: -1)):
-                            makeStats(on: context.day(offset: -1), keyPresses: 2)])
-        let remote = [
-            CoreDaySnapshotV1(deviceId: "current", localDay: context.dayKey(context.day(offset: -5)),
-                revision: 1, keyPresses: 100, keyPressCounts: [:], clicks: .zero),
-            CoreDaySnapshotV1(deviceId: "other", localDay: context.dayKey(first),
-                revision: 1, keyPresses: 7, keyPressCounts: [:], clicks: .zero)
-        ]
-        let manager = context.makeManager(syncDisplayContext: {
-            StatsManager.SyncDisplayContext(deviceId: "current", remoteSnapshots: remote)
-        })
-        let before = context.defaults.dictionaryRepresentation() as NSDictionary
-
-        let period = try XCTUnwrap(manager.keyboardTrackingPeriod())
-        let timeline = manager.cumulativeKeyboardTimeline()
-
-        XCTAssertEqual(period.firstTrackedDayKey, context.dayKey(first))
-        XCTAssertEqual(period.firstTrackedDate, first)
-        XCTAssertEqual(timeline.first(where: { $0.totalKeyPresses > 0 })?.dayKey,
-                       period.firstTrackedDayKey)
-        XCTAssertEqual(period.dayIndex(for: context.dayKey(first)), 1)
-        XCTAssertEqual(period.dayIndex(for: context.dayKey(context.day(offset: -2))), 2)
-        XCTAssertEqual(period.dayIndex(for: context.dayKey(context.day(offset: -1))), 3)
-        XCTAssertEqual(period.dayIndex(for: try XCTUnwrap(timeline.last)), 4)
-        XCTAssertNil(period.dayIndex(for: context.dayKey(mouseOnlyDay)))
-        XCTAssertNil(manager.localSyncHistorySnapshot()[context.dayKey(first)])
-        XCTAssertEqual(context.defaults.dictionaryRepresentation() as NSDictionary, before)
+        var daily = DailyStats(date: today)
+        daily.date = today
+        daily.keyPresses = 9
+        daily.keyPressCounts = ["A": 9]
+        context.defaults.set(try JSONEncoder().encode(daily), forKey: "dailyStats")
+        let manager = context.makeManager()
+        XCTAssertEqual(manager.displayCurrentStats().keyPresses, 9)
+        XCTAssertEqual(manager.cumulativeKeyboardSnapshot(asOf: today)?.totalKeyPresses, 9)
+        XCTAssertEqual(manager.localHistorySnapshot().count, 1)
+        XCTAssertEqual(context.defaults.data(forKey: "sync.state.v1"), legacyState)
+        XCTAssertEqual(context.defaults.string(forKey: "sync.installationDeviceId.v1"), "legacy-device")
+        manager.flushPendingSave()
+        let reopened = context.makeManager()
+        XCTAssertEqual(reopened.displayCurrentStats().keyPressCounts, ["A": 9])
     }
 
     private func makeContext(timeZone: TimeZone = .current) throws -> StatsManagerTestContext {

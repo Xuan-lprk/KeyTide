@@ -60,7 +60,7 @@ struct GrowthKeyboardPresentation {
     private let formatter: DateFormatter
 
     /// The production page and tests use this exact adapter, including unsaved
-    /// currentStats, established history normalization and Sync display aggregation.
+    /// currentStats, established history normalization and local display queries.
     static func load(from manager: StatsManager, now: Date = Date(),
                      calendar: Calendar = .current) -> GrowthKeyboardPresentation? {
         let timeline = manager.cumulativeKeyboardTimeline()

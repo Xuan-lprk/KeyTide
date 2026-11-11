@@ -57,11 +57,6 @@ class StatsManager {
         case clicks
     }
 
-    struct SyncDisplayContext {
-        let deviceId: String
-        let remoteSnapshots: [CoreDaySnapshotV1]
-    }
-
     struct Environment {
         let userDefaults: UserDefaults
         let now: () -> Date
@@ -69,8 +64,6 @@ class StatsManager {
         let makeDateKeyFormatter: () -> DateFormatter
         let notificationCenter: NotificationCenter
         let schedulesAutomaticWork: Bool
-        let blocksLegacyImport: () -> Bool
-        let syncDisplayContext: () -> SyncDisplayContext?
         let sendThresholdNotification: (ThresholdMetric, Int, Int) -> Void
     }
 
@@ -134,7 +127,6 @@ class StatsManager {
     private(set) var currentIconTintColor: NSColor?
     var menuBarUpdateHandler: (() -> Void)?
     private var statsUpdateHandlers: [UUID: () -> Void] = [:]
-    private var remoteCacheObserver: NSObjectProtocol?
 
     private var cachedMouseDistanceCalibrationFactor: Double = 1.0
     private let mouseDistanceCalibrationLock = NSLock()
@@ -334,15 +326,7 @@ class StatsManager {
         }
         if environment.schedulesAutomaticWork {
             setupMidnightReset()
-            remoteCacheObserver = environment.notificationCenter.addObserver(
-                forName: .syncRemoteCacheDidChange,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                guard let self else { return }
-                self.notifyMenuBarUpdate()
-                self.notifyStatsUpdate()
-            }
+
         }
     }
 
@@ -351,9 +335,7 @@ class StatsManager {
         statsUpdateTimer?.invalidate()
         midnightCheckTimer?.invalidate()
         inputRateTimer?.invalidate()
-        if let remoteCacheObserver {
-            environment.notificationCenter.removeObserver(remoteCacheObserver)
-        }
+
     }
     
     // MARK: - 数据更新方法
@@ -901,7 +883,6 @@ class StatsManager {
         case invalidFormat
         case unsupportedVersion
         case emptyData
-        case syncEnabled
 
         var errorDescription: String? {
             switch self {
@@ -911,8 +892,6 @@ class StatsManager {
                 return NSLocalizedString("import.error.unsupportedVersion", comment: "")
             case .emptyData:
                 return NSLocalizedString("import.error.emptyData", comment: "")
-            case .syncEnabled:
-                return NSLocalizedString("import.error.syncEnabled", comment: "")
             }
         }
     }
@@ -941,7 +920,6 @@ class StatsManager {
     }
 
     func importStatsData(from data: Data, mode: ImportMode = .overwrite) throws {
-        guard !environment.blocksLegacyImport() else { throw ImportError.syncEnabled }
         guard !data.isEmpty else { throw ImportError.emptyData }
 
         let decoder = JSONDecoder()
@@ -1418,7 +1396,6 @@ extension StatsManager {
 
     struct HistoryTrendSeries {
         let display: [HistoryPoint]
-        let local: [HistoryPoint]?
     }
 
     /// 键盘热力图可切换日期边界（按天连续切换）
@@ -1467,33 +1444,8 @@ extension StatsManager {
     }
 
     func historyTrendSeries(range: HistoryRange, metric: HistoryMetric) -> HistoryTrendSeries {
-        let dates = datesInRange(range)
-        let localHistory = localSyncHistorySnapshot()
-        let localSeries = makeHistorySeries(dates: dates, metric: metric, history: localHistory)
-        switch metric {
-        case .mouseDistance, .scrollDistance:
-            return HistoryTrendSeries(display: localSeries, local: nil)
-        case .keyPresses, .clicks:
-            break
-        }
-
-        guard let syncContext = environment.syncDisplayContext() else {
-            return HistoryTrendSeries(display: localSeries, local: nil)
-        }
-
-        guard !syncContext.remoteSnapshots.isEmpty else {
-            return HistoryTrendSeries(display: localSeries, local: nil)
-        }
-
-        let displayHistory = DisplayStatsAggregator.aggregate(
-            local: localHistory,
-            remote: syncContext.remoteSnapshots,
-            currentDeviceId: syncContext.deviceId
-        )
-        return HistoryTrendSeries(
-            display: makeHistorySeries(dates: dates, metric: metric, history: displayHistory),
-            local: localSeries
-        )
+        HistoryTrendSeries(display: makeHistorySeries(dates: datesInRange(range), metric: metric,
+            history: localHistorySnapshot()))
     }
 
     private func makeHistorySeries(
@@ -1684,8 +1636,8 @@ extension StatsManager {
         )
     }
 
-    /// Returns the current device's writable history only. Remote shards are never included.
-    func localSyncHistorySnapshot() -> [String: DailyStats] {
+    /// Returns normalized local history, including the unsaved current day exactly once.
+    func localHistorySnapshot() -> [String: DailyStats] {
         statsStateLock.lock()
         var snapshot = history
         let current = currentStats
@@ -1697,24 +1649,12 @@ extension StatsManager {
 
     func displayCurrentStats() -> DailyStats {
         statsStateLock.lock()
-        let local = currentStats
-        statsStateLock.unlock()
-        guard let syncContext = environment.syncDisplayContext() else { return local }
-        return DisplayStatsAggregator.currentDay(
-            local: local,
-            remote: syncContext.remoteSnapshots,
-            currentDeviceId: syncContext.deviceId
-        )
+        defer { statsStateLock.unlock() }
+        return currentStats
     }
 
     private func displayHistorySnapshot() -> [String: DailyStats] {
-        let local = localSyncHistorySnapshot()
-        guard let syncContext = environment.syncDisplayContext() else { return local }
-        return DisplayStatsAggregator.aggregate(
-            local: local,
-            remote: syncContext.remoteSnapshots,
-            currentDeviceId: syncContext.deviceId
-        )
+        localHistorySnapshot()
     }
     
     private func aggregate(daily: DailyStats, into total: inout AllTimeStats, weekdays: inout [Int: (total: Int, count: Int)]) {

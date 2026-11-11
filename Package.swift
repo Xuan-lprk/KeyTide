@@ -33,6 +33,7 @@ let package = Package(
                 "zh-Hans.lproj",
                 "zh-Hant.lproj",
                 "AppStatsViewController.swift",
+                "StatsWindowStyle.swift",
                 "AppDetailView.swift",
                 "KeyboardHeatmapView.swift",
                 "KeyboardHeatmapRepresentable.swift",
@@ -43,7 +44,6 @@ let package = Package(
                 "StatsManagerLiveEnvironment.swift",
                 "HoverIconButton.swift",
                 "MouseDistanceCalibrationViewController.swift",
-                "ActivityHeatmapView.swift",
                 "AllTimeStatsWindowController.swift",
                 "MouseDistanceCalibrationWindowController.swift",
                 "SettingsViewController.swift",
@@ -51,6 +51,7 @@ let package = Package(
                 "AppDelegate.swift",
                 "MenuBarController.swift",
                 "AllTimeStatsViewController.swift",
+                "ActivityOverviewView.swift",
                 "MainWindowController.swift",
                 "HelperMigrationPresenter.swift",
                 "HelperSupervisor.swift",
@@ -59,8 +60,6 @@ let package = Package(
                 "KPSDetailView.swift",
                 "LaunchAtLoginManager.swift",
                 "RemoteEventProcessor.swift",
-                "Sync/SyncCoordinator.swift",
-                "Sync/SyncSettingsWindowController.swift",
                 "UpdateManager.swift",
                 "KeyboardHeatmapWindowController.swift",
                 "StatsPopoverViewController.swift",
@@ -72,6 +71,8 @@ let package = Package(
                 "MainWindowViewController.swift"
             ],
             sources: [
+                "ActivityHeatmapView.swift",
+                "AppStatsListFilter.swift",
                 "AppLaunchMode.swift",
                 "AppStats.swift",
                 "AppKeyBreakdown.swift",
@@ -97,18 +98,13 @@ let package = Package(
                 "StatsManager.swift",
                 "AnalyticsManager.swift",
                 "UpdateCheckCoordinator.swift",
-                "Sync/SyncModels.swift",
-                "Sync/SyncCrypto.swift",
-                "Sync/SyncStorage.swift",
-                "Sync/SyncTransport.swift",
-                "Sync/DisplayStatsAggregator.swift"
             ]
         ),
         .testTarget(
             name: "KeytideCoreTests",
             dependencies: ["KeytideCore", "KeytideEventCore", "PostHog"],
             path: "KeytideTests",
-            sources: ["GrowthKeyboard3DTests.swift", "AppLaunchModeTests.swift", "GrowthKeyboardTests.swift", "KeyboardUsageProgressTests.swift", "KeyboardTrackingPeriodTests.swift", "CumulativeKeyboardSnapshotTests.swift", "KeyboardLayoutTests.swift", "PhysicalKeyMappingTests.swift", "AppStatsTests.swift", "AppKeyBreakdownTests.swift", "AppDetailPresentationTests.swift", "SystemMediaKeyTests.swift", "InteractionProfileTests.swift", "AppActivityTrackerTests.swift", "AnalyticsManagerTests.swift", "StatsManagerTests.swift", "StatsModelsTests.swift", "UpdateCheckCoordinatorTests.swift", "SyncCoreTests.swift"]
+            sources: ["AppStatsListFilterTests.swift", "ActivityHeatmapTests.swift", "GrowthKeyboard3DTests.swift", "AppLaunchModeTests.swift", "GrowthKeyboardTests.swift", "KeyboardUsageProgressTests.swift", "KeyboardTrackingPeriodTests.swift", "CumulativeKeyboardSnapshotTests.swift", "KeyboardLayoutTests.swift", "PhysicalKeyMappingTests.swift", "AppStatsTests.swift", "AppKeyBreakdownTests.swift", "AppDetailPresentationTests.swift", "SystemMediaKeyTests.swift", "InteractionProfileTests.swift", "AppActivityTrackerTests.swift", "AnalyticsManagerTests.swift", "StatsManagerTests.swift", "StatsModelsTests.swift", "UpdateCheckCoordinatorTests.swift"]
         )
     ]
 )

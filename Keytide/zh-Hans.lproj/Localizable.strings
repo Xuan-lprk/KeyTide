@@ -52,6 +52,7 @@
 "setting.notifyClickThreshold" = "点击通知阈值";
 "setting.notifyUnit" = "次";
 "button.ok" = "确定";
+"settings.cancel" = "取消";
 
 "notification.threshold.title" = "统计提醒";
 "notification.threshold.body.keys" = "今日按键数已达到 %@ 次";
@@ -97,9 +98,6 @@
 
 "history.total" = "总计: %@";
 "history.empty" = "无数据";
-"history.series.synced" = "同步汇总";
-"history.series.local" = "本机";
-"history.series.value" = "%@: %@";
 
 "button.reset" = "重置统计";
 "button.checkUpdates" = "立即更新";
@@ -157,7 +155,7 @@
 "about.version" = "版本 %@ (%@)";
 
 "allTimeStats.windowTitle" = "有史以来统计";
-"allTimeStats.title" = "有史以来统计";
+"allTimeStats.title" = "活动记录";
 "allTimeStats.button" = "历史总计";
 "allTimeStats.rangeFormat" = "%@ - %@ (共 %d 天)";
 "allTimeStats.noData" = "暂无数据";
@@ -165,8 +163,8 @@
 "allTimeStats.funStats" = "趣味统计";
 "allTimeStats.maxDailyKeyPresses" = "最高单日键盘敲击";
 "allTimeStats.maxDailyClicks" = "最高单日点击数";
-"allTimeStats.avgKeyPressesPerDay" = "平均每天键盘敲击";
-"allTimeStats.avgClicksPerDay" = "平均每天点击数";
+"allTimeStats.avgKeyPressesPerDay" = "活跃日日均按键";
+"allTimeStats.avgClicksPerDay" = "活跃日日均点击";
 "stats.totalClicks" = "总点击数";
 
 "allTimeStats.insights" = "洞察分析";
@@ -199,7 +197,35 @@
 
 "appStats.windowTitle" = "按应用统计";
 "appStats.title" = "按应用统计";
-"appStats.subtitle" = "点击应用，查看所选时间范围内的具体按键。仅保存次数，不记录内容。";
+"appStats.subtitle" = "了解键鼠活动发生在哪些应用。打开应用可查看具体按键。";
+"appStats.rangeSummary" = "此范围内全部已归属应用";
+"appStats.listTitle" = "应用列表";
+"appStats.sortable" = "点按切换排序方向";
+"appStats.disabledDetail" = "在设置中开启分应用统计后，这里会显示活动记录。";
+"appStats.openSettings" = "打开设置";
+"appStats.noSearchResultsDetail" = "试试其他应用名称或 bundle ID。上方总计仍包含此范围内全部应用。";
+"appStats.emptyDetail" = "开启分应用统计并使用键盘或鼠标后，活动会显示在这里。";
+"allTimeStats.cumulative" = "累计数据";
+"allTimeStats.cumulativeEmpty" = "累计数据 · 暂无活动记录";
+"allTimeStats.distanceFootnote" = "距离换算：鼠标移动 %.2f 个马拉松 · 滚动 %.2f 座珠峰";
+"activity.range.week" = "7 天";
+"activity.range.month" = "30 天";
+"activity.range.label" = "活动时间范围";
+"activity.previousPeriod" = "上一时间段";
+"activity.nextPeriod" = "下一时间段";
+"activity.periodFormat" = "%@ – %@";
+"activity.totalInteractions" = "次键鼠交互";
+"activity.keysFormat" = "按键 %@";
+"activity.clicksFormat" = "点击 %@";
+"activity.chart.label" = "每日键鼠活动";
+"activity.chart.hint" = "选择一天查看详情，使用左右方向键切换日期，按回车查看截至该日的键盘成长。";
+"activity.chart.empty" = "这个时间段没有活动记录";
+"activity.selectDay" = "选择柱状图，查看当天活动。";
+"activity.openGrowthFor" = "查看截至%@的键盘成长";
+"activity.moreInsights" = "更多洞察与趣味记录";
+"activity.lifetimeFormat" = "累计：%@ 次按键 · %@ 次点击 · 鼠标移动 %@ · 滚动 %@\n%@";
+"activity.privacy" = "只保存聚合统计，不记录你的输入内容";
+"heatmap.dailyScope" = "当天次数";
 "appStats.button" = "应用统计";
 "appStats.range.today" = "今天";
 "appStats.range.week" = "过去7天";
@@ -213,7 +239,6 @@
 "appStats.column.clicks" = "点击";
 "appStats.column.scroll" = "滚轮";
 "appStats.sortIndicator" = "↓";
-"appStats.summary" = "总计: %@ 键盘 | %@ 点击 | %@ 滚动";
 "appStats.empty" = "暂无应用数据";
 "appStats.disabled" = "按应用统计已在设置中关闭";
 "appStats.unknownApp" = "未知应用";
@@ -253,120 +278,7 @@
 "helperMigration.openSettings" = "打开系统设置";
 "helperMigration.later" = "稍后";
 
-/* 端到端加密设备同步 */
-"settings.section.sync" = "设备同步";
-"sync.window.title" = "设备同步";
-"sync.title" = "端到端加密同步";
-"sync.privacy.message" = "按键次数和点击总数会先在本机加密再上传。服务端无法读取日期、键位或统计数值。";
-"sync.help.button" = "如何使用设备同步";
-"sync.help.title" = "如何使用设备同步";
-"sync.help.instructions" = "1. 在第一台设备上点击“创建同步组”，并妥善保存恢复码。\n\n2. 在新设备上点击“配对本设备”，再到同步组内已有设备输入六位配对码；确认两端安全码一致后完成授权。\n\n3. 配对至少两台设备后，可点击“立即同步”。每天首次启动时，如果本设备当天尚未成功同步，Keytide 会尽快同步；此后会在上次成功同步 8 小时后自动同步。如果到期时应用未运行或设备处于睡眠状态，会在启动或唤醒后尽快补同步。\n\n如果所有已配对设备都无法使用，可通过恢复码重新加入同步组。";
-"sync.help.dataTitle" = "当前会同步的数据";
-"sync.help.dataIncluded" = "• 按天统计的按键总次数，以及各按键或组合键的累计次数\n• 按天统计的鼠标左键、右键、中键、后退键和前进键点击次数\n• 设备列表所需的加密设备名称和平台";
-"sync.help.dataExcluded" = "不会同步：输入内容或按键顺序、鼠标位置或移动距离、滚动距离、分应用统计。";
-"sync.help.statusTitle" = "状态说明";
-"sync.help.status.synced" = "绿色 — 已同步";
-"sync.help.status.inactive" = "灰色 — 未开启或尚未完成同步";
-"sync.help.status.syncing" = "黄色 — 同步中";
-"sync.help.status.failed" = "红色 — 同步失败或需要处理";
-"sync.action.manage" = "管理…";
-"sync.action.create" = "创建同步组";
-"sync.action.pairNewDevice" = "配对本设备";
-"sync.action.recover" = "恢复";
-"sync.action.checkPairing" = "检查授权";
-"sync.action.join" = "确认配对码";
-"sync.action.syncNow" = "立即同步";
-"sync.action.retrySetup" = "重试首次同步";
-"sync.action.cooldown" = "%02d:%02d 后可重试";
-"sync.action.showRecoveryCode" = "恢复码";
-"sync.action.leave" = "退出同步";
-"sync.action.forgetLocal" = "清除本机同步设置";
-"sync.action.revoke" = "撤销";
-"sync.action.deleteVault" = "删除全部云端数据";
-"sync.status.serviceNotConfigured" = "同步服务尚未配置";
-"sync.status.serviceNotConfigured.detail" = "当前构建未写入生产 workers.dev 地址，本地统计不受影响。";
-"sync.status.needsRepair" = "需要重新配对";
-"sync.status.needsRepair.detail" = "本地统计仍然安全。请使用恢复码或重新配对本设备。";
-"sync.status.syncing" = "正在同步加密数据…";
-"sync.status.syncing.detail" = "同步期间本地统计会继续正常工作。";
-"sync.status.syncing.progress" = "已同步 %d / %d 天，本地统计会继续正常工作。";
-"sync.status.failed" = "同步失败";
-"sync.status.off" = "同步未启用";
-"sync.status.off.detail" = "可以创建同步组、恢复同步组或配对本设备。只有一台设备时不会发起普通同步请求。";
-"sync.status.singleDevice" = "只有一台设备，无需同步";
-"sync.status.singleDevice.detail" = "添加另一台设备后才会启用手动和每日同步。";
-"sync.status.on" = "设备同步已开启";
-"sync.status.lastSync" = "上次同步于 %@";
-"sync.status.notYetSynced" = "尚未同步";
-"sync.pair.codeHelp" = "在同步组内已有的设备上输入这个六位配对码。";
-"sync.pair.enterCode" = "配对码";
-"sync.devices.title" = "设备";
-"sync.device.thisDevice" = "本机";
-"sync.device.new" = "新设备";
-"sync.device.existing" = "已有设备";
-"sync.device.generic" = "设备 %@";
-"sync.device.unknownCount" = "另外 %d 台加密设备";
-"sync.recoveryCode.title" = "保存恢复码";
-"sync.recoveryCode.message" = "如果所有已配对设备都丢失，此恢复码是恢复同步组的唯一方式。Keytide 和 Cloudflare 都无法替你找回。";
-"sync.recoveryCode.saved" = "复制到剪贴板";
-"sync.safetyCode.title" = "核对安全码";
-"sync.safetyCode.message" = "请确认两台设备都显示相同的安全码：%@";
-"sync.safetyCode.confirm" = "安全码一致";
-"sync.recover.title" = "恢复同步组";
-"sync.recover.message" = "输入 28 位恢复码。凭证只在本机派生，恢复码不会发送给服务端。";
-"sync.recover.replace.title" = "选择要接管的设备";
-"sync.recover.replace.message" = "同步组已有 5 台设备。请选择一个旧设备身份进行接管；其云端历史会保留，旧凭证将立即失效。";
-"sync.recover.replace.confirm" = "接管并恢复";
-"sync.revoke.confirm.title" = "撤销这台设备？";
-"sync.revoke.confirm.message" = "该设备将无法继续同步，但会保留它已同步的历史贡献。";
-"sync.leave.confirm.title" = "退出设备同步？";
-"sync.leave.confirm.message" = "本机统计会保留，同时撤销本机的云端凭证。";
-"sync.forgetLocal.confirm.title" = "清除本机同步设置？";
-"sync.forgetLocal.confirm.message" = "本机统计会保留。由于云端凭证已不可用，现在无法撤销旧设备；之后仍可用恢复码接管该设备身份。";
-"sync.delete.confirm.title" = "删除全部云端同步数据？";
-"sync.delete.confirm.message" = "所有云端密文和设备权限都会被删除，本机保存的统计不会删除。";
-"sync.error.serviceNotConfigured" = "当前构建未配置同步服务。";
-"sync.error.alreadyConfigured" = "本设备已有同步配置。";
-"sync.error.notConfigured" = "设备同步尚未配置，或需要先恢复。";
-"sync.error.singleDevice" = "当前只注册了一台设备，没有需要同步的数据。";
-"sync.error.coolingDown" = "同步正在冷却，请在界面显示的时间后重试。";
-"sync.error.dailyLimit" = "本设备已达到今天的成功同步次数上限。";
-"sync.error.inProgress" = "已有同步任务正在执行。";
-"sync.error.pairingNotStarted" = "请先开始配对。";
-"sync.error.pairingPending" = "另一台设备尚未批准配对。";
-"sync.error.pairingExpired" = "配对码已过期，请重新开始。";
-"sync.error.pairingNotConfirmed" = "必须确认两端安全码一致才能完成配对。";
-"sync.error.invalidPairingCode" = "请输入有效的六位配对码。";
-"sync.error.maximumDevices" = "一个同步组最多包含五台活跃设备。";
-"sync.error.bootstrapTooLarge" = "本机初始历史超过 4096 天的同步上限。";
-"sync.error.revisionExhausted" = "本地同步版本号已无法继续增加。";
-"sync.error.unsupportedSchema" = "不支持此同步数据版本。";
-"sync.error.invalidSnapshot" = "同步快照无效。";
-"sync.error.invalidKeyName" = "同步快照中的按键名称无效。";
-"sync.error.tooManyKeys" = "同步快照包含过多按键。";
-"sync.error.snapshotTooLarge" = "同步快照过大。";
-"sync.error.invalidRecoveryCode" = "恢复码无效或校验码错误。";
-"sync.error.authenticationFailed" = "密文认证失败，请重新配对或恢复本设备。";
-"sync.error.randomGenerationFailed" = "安全随机数生成失败。";
-"sync.error.credentialStorage" = "无法在本地保存同步凭证。";
-"sync.error.missingCredentials" = "本地同步凭证已丢失。";
-"sync.error.invalidApplicationSupportDirectory" = "应用支持目录不可用。";
-"sync.error.invalidConfiguration" = "同步服务配置无效。";
-"sync.error.invalidResponse" = "同步服务返回了无效响应。";
-"sync.error.notFound" = "找不到同步组或配对会话。";
-"sync.error.conflict" = "服务端拒绝了版本冲突的快照。";
-"sync.status.pairingWaiting" = "正在等待另一台设备…";
-"sync.status.pairingWaiting.detail" = "另一台设备正在上传加密历史数据，完成后会自动继续同步。";
-"sync.error.rateLimited" = "同步尝试过于频繁，请等待重试时间。";
-"sync.error.server" = "同步服务暂时不可用。";
-"sync.error.corruptState" = "本地同步状态已损坏。本机统计已保留，请恢复或重新配对。";
-"sync.error.corruptCache" = "远端同步缓存已损坏。本机统计已保留，并会重新拉取缓存。";
-"import.error.syncEnabled" = "启用设备同步后不能使用旧版导入。";
 "import.disabled.title" = "无法导入";
-"import.disabled.syncEnabled" = "请先退出设备同步，再导入旧版 v1 文件。导出仍然只包含本设备的本地数据。";
-"button.resetThisDevice" = "重置本设备";
-"stats.reset.local.title" = "重置本设备今日统计？";
-"stats.reset.local.message" = "只会重置本机今天的统计，其他设备不受影响；下一次同步会用更高版本传播零值快照。";
 "button.cancel" = "取消";
 "button.confirm" = "确认";
 
@@ -587,3 +499,56 @@
 "keyboard.export.copyClean" = "复制图片（不含日期与次数）";
 "keyboard.export.copied" = "图片已复制";
 "keyboard.export.copyFailed" = "无法复制图片，请重试。";
+
+// Local macOS settings
+"settings.page.general" = "常规";
+"settings.page.appearance" = "菜单与外观";
+"settings.page.notifications" = "通知";
+"settings.page.data" = "数据";
+"settings.page.general.help" = "选择启动方式，以及要记录的活动。";
+"settings.page.appearance.help" = "调整菜单栏展示与 Keyboard Studio 的视觉风格。";
+"settings.page.notifications.help" = "为每日键盘和鼠标使用设置里程碑。";
+"settings.page.data.help" = "校准距离、备份记录，或重置今日统计。";
+"settings.localOnly" = "本地记录，不采集输入文本。";
+"settings.section.feedback" = "输入反馈";
+"settings.data.calibration" = "距离校准";
+"settings.data.calibrationHelp" = "让鼠标距离更符合显示器与指针设置。";
+"settings.data.transfer" = "导入与导出";
+"settings.data.transferHelp" = "备份为 JSON 文件，或导入其他安装中的记录。";
+"settings.data.reset" = "重置统计";
+"settings.data.resetHelp" = "清空今日计数，已保存的历史记录仍会保留。";
+
+"settings.navigation.general" = "常规";
+"settings.navigation.appearance" = "菜单与外观";
+"settings.navigation.notifications" = "通知";
+"settings.navigation.data" = "数据";
+
+/* Activity calendar navigation */
+"heatmap.navigationHint" = "单击选择日期，方向键浏览；双击或按回车查看截至该日的累计键盘成长。此处次数为当天记录，空白日期表示没有活动记录。";
+"heatmap.noSelection" = "未选择日期";
+
+/* Activity exploration and app list filtering */
+"heatmap.metricLabel" = "活动指标";
+"heatmap.metric.combined" = "综合";
+"heatmap.metric.keys" = "键盘";
+"heatmap.metric.clicks" = "点击";
+"heatmap.relativeIntensity" = "颜色表示当前时间段内%@的相对强度。空白日期表示没有记录，不代表当天没有使用电脑。";
+"heatmap.selectionPrompt" = "选择日期查看当天次数；上方总量仍为累计数据。";
+"heatmap.openGrowth" = "查看键盘成长";
+"heatmap.outsideCalendar" = "该日期不在日历范围内";
+"heatmap.outsideCalendarDetail" = "仍可查看截至该日的累计键盘成长，日历范围不会扩展。";
+"heatmap.locateDate" = "在活动日历中选择这一天";
+"insights.activeDayAverage" = "该指标活跃日的日均次数";
+"appStats.searchPlaceholder" = "搜索应用";
+"appStats.matchCount" = "匹配 %d / %d 个应用";
+"appStats.clearSearch" = "清除搜索";
+"appStats.noSearchResults" = "没有匹配的应用";
+
+"activity.topKeys.allTime" = "最常按键 · 累计";
+"activity.calendarIntensity" = "颜色深浅表示当日相对活跃程度";
+
+// Activity insights: playful copy with explicit aggregate meaning.
+"activity.insight.keyboardPeak" = "键盘最热闹的一天";
+"activity.insight.mousePeak" = "鼠标最忙碌的一天";
+"activity.insight.revision" = "删除，也算一种前进。此处为删除键占比。";
+"activity.insight.recordedDays" = "已留下 %d 个活跃日的足迹。空白格只是没有记录，不代表那天没有精彩。";

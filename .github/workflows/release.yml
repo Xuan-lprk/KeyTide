@@ -12,9 +12,6 @@ permissions:
 jobs:
   build-macos:
     runs-on: macos-26
-    env:
-      # Optional: an empty value builds a local-only release without Sync service.
-      KEYSTATS_SYNC_SERVICE_URL: ${{ vars.KEYSTATS_SYNC_PRODUCTION_URL }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

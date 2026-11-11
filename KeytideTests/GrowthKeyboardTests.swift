@@ -40,8 +40,7 @@ final class GrowthKeyboardTests: XCTestCase {
         return try XCTUnwrap(GrowthKeyboardPresentation(timeline: CumulativeKeyboardTimeline.build(history: history),
             period: period, now: date(today), calendar: calendar, dailyUsage: history.map { KeyboardUsageDay(dayKey: $0.key, totalKeyPresses: $0.value.keyPresses, keyPressCounts: $0.value.keyPressCounts) }))
     }
-    private func manager(history: [String: DailyStats], current: DailyStats,
-                         remote: [CoreDaySnapshotV1] = []) throws -> (StatsManager, UserDefaults) {
+    private func manager(history: [String: DailyStats], current: DailyStats) throws -> (StatsManager, UserDefaults) {
         let suite = "KeyStatsTests.Growth." + UUID().uuidString
         suites.append(suite)
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -50,8 +49,7 @@ final class GrowthKeyboardTests: XCTestCase {
         let now = date("2026-10-05"), cal = calendar, fmt = formatter
         let manager = StatsManager(environment: .init(userDefaults: defaults, now: { now }, calendar: { cal },
             makeDateKeyFormatter: { fmt.copy() as! DateFormatter }, notificationCenter: NotificationCenter(),
-            schedulesAutomaticWork: false, blocksLegacyImport: { false },
-            syncDisplayContext: { remote.isEmpty ? nil : .init(deviceId: "local", remoteSnapshots: remote) },
+            schedulesAutomaticWork: false,
             sendThresholdNotification: { _, _, _ in }))
         return (manager, defaults)
     }
@@ -147,30 +145,7 @@ final class GrowthKeyboardTests: XCTestCase {
         XCTAssertEqual(defaults.dictionaryRepresentation() as NSDictionary, before)
     }
 
-    func testProductionAdapterUsesDisplaySyncAndExcludesCurrentDeviceDuplicate() throws {
-        let remote = [
-            CoreDaySnapshotV1(deviceId: "local", localDay: "2026-10-05", revision: 1,
-                keyPresses: 100, keyPressCounts: ["Z": 100], clicks: .zero),
-            CoreDaySnapshotV1(deviceId: "other", localDay: "2026-10-02", revision: 1,
-                keyPresses: 7, keyPressCounts: ["B": 7], clicks: .zero),
-            CoreDaySnapshotV1(deviceId: "other", localDay: "2026-10-05", revision: 1,
-                keyPresses: 3, keyPressCounts: ["Cmd++": 3], clicks: .zero)
-        ]
-        let (manager, defaults) = try manager(history: [:],
-            current: day("2026-10-05", total: 2, counts: ["LeftCmd+C": 2]), remote: remote)
-        manager.incrementKeyPresses(keyName: "A")
-        let before = defaults.dictionaryRepresentation() as NSDictionary
-        let p = try XCTUnwrap(GrowthKeyboardPresentation.load(from: manager, now: date("2026-10-05"), calendar: calendar))
-        XCTAssertEqual(p.period.firstTrackedDayKey, "2026-10-02")
-        XCTAssertEqual(p.dayCount, 4)
-        let frame = p.frame(at: 3)
-        XCTAssertEqual(frame.snapshot.totalKeyPresses, 13)
-        XCTAssertNil(frame.snapshot.keyPressCounts["Z"])
-        XCTAssertEqual(frame.physical.counts["="], 3)
-        XCTAssertEqual(frame.physical.counts["LeftCmd"], 2)
-        XCTAssertEqual(frame.physical.counts["Cmd"], 3)
-        XCTAssertEqual(defaults.dictionaryRepresentation() as NSDictionary, before)
-    }
+
 
     func testSnapshotCacheRemainsStableUntilExplicitFormalRefresh() throws {
         let (manager, _) = try manager(history: [:], current: day("2026-10-05", total: 1, counts: ["A": 1]))

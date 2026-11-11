@@ -35,6 +35,9 @@
 		A1000015 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* NotificationManager.swift */; };
 		A1000020 /* AllTimeStatsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* AllTimeStatsWindowController.swift */; };
 		A1000021 /* AllTimeStatsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* AllTimeStatsViewController.swift */; };
+		C10000B1 /* AppStatsListFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000B1 /* AppStatsListFilter.swift */; };
+		C10000B2 /* StatsWindowStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000B2 /* StatsWindowStyle.swift */; };
+		C10000B3 /* ActivityOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000B3 /* ActivityOverviewView.swift */; };
 		A1000022 /* AppStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* AppStats.swift */; };
 		B1000091 /* InteractionProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000091 /* InteractionProfile.swift */; };
 		B1000093 /* AppDetailPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000093 /* AppDetailPresentation.swift */; };
@@ -61,13 +64,6 @@
 		A1000034 /* UpdateCheckCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000034 /* UpdateCheckCoordinator.swift */; };
 		A1000035 /* AnalyticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000035 /* AnalyticsManager.swift */; };
 		A1000036 /* StatsManagerLiveEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000036 /* StatsManagerLiveEnvironment.swift */; };
-		B1000001 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000001 /* SyncModels.swift */; };
-		B1000002 /* SyncCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000002 /* SyncCrypto.swift */; };
-		B1000003 /* SyncStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000003 /* SyncStorage.swift */; };
-		B1000004 /* SyncTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000004 /* SyncTransport.swift */; };
-		B1000005 /* DisplayStatsAggregator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000005 /* DisplayStatsAggregator.swift */; };
-		B1000006 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000006 /* SyncCoordinator.swift */; };
-		B1000007 /* SyncSettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000007 /* SyncSettingsWindowController.swift */; };
 		B10000A1 /* GrowthKeyboardPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000A1 /* GrowthKeyboardPresentation.swift */; };
 		B10000A2 /* GrowthPlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000A2 /* GrowthPlaybackState.swift */; };
 		B10000A3 /* EditorialKeyboardRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000A3 /* EditorialKeyboardRenderer.swift */; };
@@ -137,6 +133,9 @@
 		A200001A /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = "zh-Hant.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A2000020 /* AllTimeStatsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllTimeStatsWindowController.swift; sourceTree = "<group>"; };
 		A2000021 /* AllTimeStatsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllTimeStatsViewController.swift; sourceTree = "<group>"; };
+		C20000B1 /* AppStatsListFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStatsListFilter.swift; sourceTree = "<group>"; };
+		C20000B2 /* StatsWindowStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsWindowStyle.swift; sourceTree = "<group>"; };
+		C20000B3 /* ActivityOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityOverviewView.swift; sourceTree = "<group>"; };
 		A2000022 /* AppStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStats.swift; sourceTree = "<group>"; };
 		B2000091 /* InteractionProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionProfile.swift; sourceTree = "<group>"; };
 		B2000093 /* AppDetailPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDetailPresentation.swift; sourceTree = "<group>"; };
@@ -166,13 +165,6 @@
 		A3000001 /* Keytide.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keytide.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A3000003 /* Keytide.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Keytide.entitlements; sourceTree = "<group>"; };
-		B2000001 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
-		B2000002 /* SyncCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCrypto.swift; sourceTree = "<group>"; };
-		B2000003 /* SyncStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStorage.swift; sourceTree = "<group>"; };
-		B2000004 /* SyncTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncTransport.swift; sourceTree = "<group>"; };
-		B2000005 /* DisplayStatsAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayStatsAggregator.swift; sourceTree = "<group>"; };
-		B2000006 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
-		B2000007 /* SyncSettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettingsWindowController.swift; sourceTree = "<group>"; };
 		B20000A1 /* GrowthKeyboardPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrowthKeyboardPresentation.swift; sourceTree = "<group>"; };
 		B20000A2 /* GrowthPlaybackState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrowthPlaybackState.swift; sourceTree = "<group>"; };
 		B20000A3 /* EditorialKeyboardRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialKeyboardRenderer.swift; sourceTree = "<group>"; };
@@ -248,7 +240,6 @@
 		A5000002 /* Keytide */ = {
 			isa = PBXGroup;
 			children = (
-				B5000001 /* Sync */,
 				A2000001 /* AppDelegate.swift */,
 				D20000B4 /* MechanicalKeyboardWindowController.swift */,
 				D20000B3 /* MechanicalKeyboardView.swift */,
@@ -306,6 +297,9 @@
 				A2000020 /* AllTimeStatsWindowController.swift */,
 				A2000026 /* ActivityHeatmapView.swift */,
 				A2000021 /* AllTimeStatsViewController.swift */,
+				C20000B1 /* AppStatsListFilter.swift */,
+				C20000B2 /* StatsWindowStyle.swift */,
+				C20000B3 /* ActivityOverviewView.swift */,
 				A2000013 /* LaunchAtLoginManager.swift */,
 				A2000014 /* SettingsViewController.swift */,
 				A2000029 /* UpdateManager.swift */,
@@ -328,20 +322,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		B5000001 /* Sync */ = {
-			isa = PBXGroup;
-			children = (
-				B2000001 /* SyncModels.swift */,
-				B2000002 /* SyncCrypto.swift */,
-				B2000003 /* SyncStorage.swift */,
-				B2000004 /* SyncTransport.swift */,
-				B2000005 /* DisplayStatsAggregator.swift */,
-				B2000006 /* SyncCoordinator.swift */,
-				B2000007 /* SyncSettingsWindowController.swift */,
-			);
-			path = Sync;
-			sourceTree = "<group>";
-		};
+
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -467,13 +448,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B1000001 /* SyncModels.swift in Sources */,
-				B1000002 /* SyncCrypto.swift in Sources */,
-				B1000003 /* SyncStorage.swift in Sources */,
-				B1000004 /* SyncTransport.swift in Sources */,
-				B1000005 /* DisplayStatsAggregator.swift in Sources */,
-				B1000006 /* SyncCoordinator.swift in Sources */,
-				B1000007 /* SyncSettingsWindowController.swift in Sources */,
 				A1000001 /* AppDelegate.swift in Sources */,
 				D10000B4 /* MechanicalKeyboardWindowController.swift in Sources */,
 				D10000B3 /* MechanicalKeyboardView.swift in Sources */,
@@ -528,6 +502,9 @@
 				A1000028 /* MouseDistanceCalibrationWindowController.swift in Sources */,
 				A1000020 /* AllTimeStatsWindowController.swift in Sources */,
 				A1000021 /* AllTimeStatsViewController.swift in Sources */,
+				C10000B1 /* AppStatsListFilter.swift in Sources */,
+				C10000B2 /* StatsWindowStyle.swift in Sources */,
+				C10000B3 /* ActivityOverviewView.swift in Sources */,
 				A1000026 /* ActivityHeatmapView.swift in Sources */,
 				A1000014 /* HoverIconButton.swift in Sources */,
 				A1000015 /* NotificationManager.swift in Sources */,
@@ -754,7 +731,6 @@
 				INFOPLIST_FILE = Keytide/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				KEYSTATS_SYNC_SERVICE_URL = "https://keystats-sync-staging.istiancz.workers.dev";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

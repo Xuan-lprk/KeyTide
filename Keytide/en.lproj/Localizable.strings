@@ -52,6 +52,7 @@
 "setting.notifyClickThreshold" = "Click Notification Threshold";
 "setting.notifyUnit" = "times";
 "button.ok" = "OK";
+"settings.cancel" = "Cancel";
 
 "notification.threshold.title" = "Keytide Reminder";
 "notification.threshold.body.keys" = "Key presses reached %@ today.";
@@ -97,9 +98,6 @@
 
 "history.total" = "Total: %@";
 "history.empty" = "No Data";
-"history.series.synced" = "Synced total";
-"history.series.local" = "This Mac";
-"history.series.value" = "%@: %@";
 
 "button.reset" = "Reset Stats";
 "button.checkUpdates" = "Update Now";
@@ -157,7 +155,7 @@
 "about.version" = "Version %@ (%@)";
 
 "allTimeStats.windowTitle" = "All-Time Statistics";
-"allTimeStats.title" = "Lifetime Statistics";
+"allTimeStats.title" = "Activity";
 "allTimeStats.button" = "All-Time Stats";
 "allTimeStats.rangeFormat" = "%@ - %@ (%d Days)";
 "allTimeStats.noData" = "No Data Available";
@@ -165,8 +163,8 @@
 "allTimeStats.funStats" = "Fun Stats";
 "allTimeStats.maxDailyKeyPresses" = "Most Keys in a Day";
 "allTimeStats.maxDailyClicks" = "Most Clicks in a Day";
-"allTimeStats.avgKeyPressesPerDay" = "Average Keys per Day";
-"allTimeStats.avgClicksPerDay" = "Average Clicks per Day";
+"allTimeStats.avgKeyPressesPerDay" = "Keys per Active Day";
+"allTimeStats.avgClicksPerDay" = "Clicks per Active Day";
 "stats.totalClicks" = "Total Clicks";
 
 "allTimeStats.insights" = "Insights";
@@ -199,7 +197,35 @@
 
 "appStats.windowTitle" = "App Statistics";
 "appStats.title" = "App Statistics";
-"appStats.subtitle" = "Select an app to see its keys in this date range. Only counts are saved, never content.";
+"appStats.subtitle" = "See where your keyboard and mouse time goes. Open an app for its key details.";
+"appStats.rangeSummary" = "All attributed apps in this range";
+"appStats.listTitle" = "Applications";
+"appStats.sortable" = "Click to change sort direction";
+"appStats.disabledDetail" = "Turn on per-app statistics in Settings to see activity here.";
+"appStats.openSettings" = "Open Settings";
+"appStats.noSearchResultsDetail" = "Try another app name or bundle ID. The totals above still include every app in this range.";
+"appStats.emptyDetail" = "Activity appears here after per-app statistics has been enabled and you use your keyboard or mouse.";
+"allTimeStats.cumulative" = "All time";
+"allTimeStats.cumulativeEmpty" = "Lifetime totals · No recorded activity yet";
+"allTimeStats.distanceFootnote" = "Distance equivalents: %.2f mouse marathons · %.2f scroll Everests";
+"activity.range.week" = "7 Days";
+"activity.range.month" = "30 Days";
+"activity.range.label" = "Activity time range";
+"activity.previousPeriod" = "Previous period";
+"activity.nextPeriod" = "Next period";
+"activity.periodFormat" = "%@ – %@";
+"activity.totalInteractions" = "keyboard and mouse interactions";
+"activity.keysFormat" = "Keys %@";
+"activity.clicksFormat" = "Clicks %@";
+"activity.chart.label" = "Daily keyboard and mouse activity";
+"activity.chart.hint" = "Choose a day to see its details. Use the left and right arrow keys to move between days; press Return to view keyboard growth through that day.";
+"activity.chart.empty" = "No activity in this period";
+"activity.selectDay" = "Choose a bar to see that day's activity.";
+"activity.openGrowthFor" = "View keyboard growth through %@";
+"activity.moreInsights" = "More insights & fun facts";
+"activity.lifetimeFormat" = "All time: %@ keys · %@ clicks · %@ mouse movement · %@ scrolling\n%@";
+"activity.privacy" = "Only aggregate counts are stored. Your input is never recorded.";
+"heatmap.dailyScope" = "Daily counts";
 "appStats.button" = "App Stats";
 "appStats.range.today" = "Today";
 "appStats.range.week" = "Last 7 Days";
@@ -213,7 +239,6 @@
 "appStats.column.clicks" = "Clicks";
 "appStats.column.scroll" = "Scroll";
 "appStats.sortIndicator" = "↓";
-"appStats.summary" = "Total: %@ keys | %@ clicks | %@ scroll";
 "appStats.empty" = "No app data yet";
 "appStats.disabled" = "App stats are disabled in Settings";
 "appStats.unknownApp" = "Unknown App";
@@ -253,120 +278,7 @@
 "helperMigration.openSettings" = "Open System Settings";
 "helperMigration.later" = "Later";
 
-/* End-to-end encrypted device sync */
-"settings.section.sync" = "Device Sync";
-"sync.window.title" = "Device Sync";
-"sync.title" = "End-to-End Encrypted Sync";
-"sync.privacy.message" = "Key counts and click totals are encrypted on this Mac before upload. The service cannot read your dates, keys, or statistics.";
-"sync.help.button" = "How to use device sync";
-"sync.help.title" = "How to Use Device Sync";
-"sync.help.instructions" = "1. On the first device, click “Create Sync Group” and store the recovery code safely.\n\n2. On the new device, click “Pair This Device.” Enter its six-digit code on a device already in the group, then confirm the matching security code on both devices.\n\n3. After at least two devices are paired, click “Sync Now” when needed. On the first launch of each local calendar day, Keytide syncs as soon as possible if this device has not already synced that day. It then syncs 8 hours after the last successful sync. If the app was closed or the device asleep when syncing was due, it will sync as soon as possible after launch or wake.\n\nIf no paired device is available, use the recovery code to rejoin the sync group.";
-"sync.help.dataTitle" = "What syncs now";
-"sync.help.dataIncluded" = "• Daily key-press totals and cumulative counts for each key or key combination\n• Daily left, right, middle, back, and forward mouse-button clicks\n• Encrypted device name and platform for the device list";
-"sync.help.dataExcluded" = "Not synced: typed content or key order, mouse position or movement distance, scroll distance, and per-app statistics.";
-"sync.help.statusTitle" = "Status indicators";
-"sync.help.status.synced" = "Green — synced";
-"sync.help.status.inactive" = "Gray — sync is off or not completed yet";
-"sync.help.status.syncing" = "Yellow — syncing";
-"sync.help.status.failed" = "Red — sync failed or needs attention";
-"sync.action.manage" = "Manage…";
-"sync.action.create" = "Create Sync Group";
-"sync.action.pairNewDevice" = "Pair This Device";
-"sync.action.recover" = "Recover";
-"sync.action.checkPairing" = "Check Approval";
-"sync.action.join" = "Confirm Code";
-"sync.action.syncNow" = "Sync Now";
-"sync.action.retrySetup" = "Retry Initial Sync";
-"sync.action.cooldown" = "Try again in %02d:%02d";
-"sync.action.showRecoveryCode" = "Recovery Code";
-"sync.action.leave" = "Leave Sync";
-"sync.action.forgetLocal" = "Clear Local Sync Setup";
-"sync.action.revoke" = "Revoke";
-"sync.action.deleteVault" = "Delete All Cloud Data";
-"sync.status.serviceNotConfigured" = "Sync service is not configured";
-"sync.status.serviceNotConfigured.detail" = "This build does not contain a production workers.dev endpoint. Local tracking continues normally.";
-"sync.status.needsRepair" = "Re-pairing required";
-"sync.status.needsRepair.detail" = "Local statistics are safe. Use your recovery code or pair this device again.";
-"sync.status.syncing" = "Syncing encrypted data…";
-"sync.status.syncing.detail" = "Local tracking continues while sync is in progress.";
-"sync.status.syncing.progress" = "Synced %d of %d days. Local tracking continues normally.";
-"sync.status.failed" = "Sync failed";
-"sync.status.off" = "Sync is off";
-"sync.status.off.detail" = "Create a group, recover one, or pair this device. A single device never makes ordinary sync requests.";
-"sync.status.singleDevice" = "Only one device — no sync needed";
-"sync.status.singleDevice.detail" = "Add another device to enable manual and daily sync.";
-"sync.status.on" = "Device sync is on";
-"sync.status.lastSync" = "Last synced %@";
-"sync.status.notYetSynced" = "Not synced yet";
-"sync.pair.codeHelp" = "Enter this six-digit code on a device already in your sync group.";
-"sync.pair.enterCode" = "Pairing code";
-"sync.devices.title" = "Devices";
-"sync.device.thisDevice" = "This Mac";
-"sync.device.new" = "New device";
-"sync.device.existing" = "Existing device";
-"sync.device.generic" = "Device %@";
-"sync.device.unknownCount" = "%d additional encrypted device(s)";
-"sync.recoveryCode.title" = "Save Your Recovery Code";
-"sync.recoveryCode.message" = "This code is the only way to recover the group if every paired device is lost. Keytide and Cloudflare cannot recover it for you.";
-"sync.recoveryCode.saved" = "Copy to Clipboard";
-"sync.safetyCode.title" = "Compare Security Codes";
-"sync.safetyCode.message" = "Confirm that both devices show this same code: %@";
-"sync.safetyCode.confirm" = "Codes Match";
-"sync.recover.title" = "Recover a Sync Group";
-"sync.recover.message" = "Enter the 28-character recovery code. It is derived locally and is never sent to the service.";
-"sync.recover.replace.title" = "Replace a Device to Recover";
-"sync.recover.replace.message" = "This sync group already has five devices. Choose one device identity to take over. Its cloud history is preserved and its old token is revoked.";
-"sync.recover.replace.confirm" = "Replace and Recover";
-"sync.revoke.confirm.title" = "Revoke This Device?";
-"sync.revoke.confirm.message" = "The device will no longer be able to sync. Its existing historical contribution is retained.";
-"sync.leave.confirm.title" = "Leave Device Sync?";
-"sync.leave.confirm.message" = "This Mac's local statistics will remain. Its cloud token will be revoked.";
-"sync.forgetLocal.confirm.title" = "Clear Local Sync Setup?";
-"sync.forgetLocal.confirm.message" = "Statistics on this Mac will remain. Because the cloud credential is unavailable, this cannot revoke the old cloud device now; the recovery code can reclaim it later.";
-"sync.delete.confirm.title" = "Delete All Cloud Sync Data?";
-"sync.delete.confirm.message" = "All encrypted cloud data and device access will be deleted. Statistics stored on this Mac will remain.";
-"sync.error.serviceNotConfigured" = "The sync service is not configured in this build.";
-"sync.error.alreadyConfigured" = "This device already has sync configuration.";
-"sync.error.notConfigured" = "Device sync is not configured or must be recovered.";
-"sync.error.singleDevice" = "Only one device is registered, so there is nothing to sync.";
-"sync.error.coolingDown" = "Sync is cooling down. Try again after the displayed time.";
-"sync.error.dailyLimit" = "This device has reached today's successful sync limit.";
-"sync.error.inProgress" = "A sync is already in progress.";
-"sync.error.pairingNotStarted" = "Start pairing first.";
-"sync.error.pairingPending" = "The other device has not approved pairing yet.";
-"sync.error.pairingExpired" = "The pairing code expired. Start again.";
-"sync.error.pairingNotConfirmed" = "Pairing requires matching security-code confirmation.";
-"sync.error.invalidPairingCode" = "Enter a valid six-digit pairing code.";
-"sync.error.maximumDevices" = "A sync group can contain at most five active devices.";
-"sync.error.bootstrapTooLarge" = "The initial local history exceeds the 4,096-day sync limit.";
-"sync.error.revisionExhausted" = "The local sync revision cannot be increased.";
-"sync.error.unsupportedSchema" = "Unsupported sync schema.";
-"sync.error.invalidSnapshot" = "The synchronized snapshot is invalid.";
-"sync.error.invalidKeyName" = "A synchronized key name is invalid.";
-"sync.error.tooManyKeys" = "The synchronized snapshot contains too many keys.";
-"sync.error.snapshotTooLarge" = "The synchronized snapshot is too large.";
-"sync.error.invalidRecoveryCode" = "The recovery code is invalid or has a checksum error.";
-"sync.error.authenticationFailed" = "Encrypted data authentication failed. Re-pair or recover this device.";
-"sync.error.randomGenerationFailed" = "Secure random generation failed.";
-"sync.error.credentialStorage" = "The sync credential could not be stored locally.";
-"sync.error.missingCredentials" = "The locally stored sync credential is missing.";
-"sync.error.invalidApplicationSupportDirectory" = "The application support directory is unavailable.";
-"sync.error.invalidConfiguration" = "The sync service configuration is invalid.";
-"sync.error.invalidResponse" = "The sync service returned an invalid response.";
-"sync.error.notFound" = "The sync group or pairing session was not found.";
-"sync.error.conflict" = "The service rejected a conflicting snapshot revision.";
-"sync.status.pairingWaiting" = "Waiting for the other device…";
-"sync.status.pairingWaiting.detail" = "The other device is uploading its encrypted history. Sync will continue automatically when it finishes.";
-"sync.error.rateLimited" = "Too many sync attempts. Wait until the retry time.";
-"sync.error.server" = "The sync service is temporarily unavailable.";
-"sync.error.corruptState" = "The local sync state is damaged. Local statistics were kept; recover or re-pair this device.";
-"sync.error.corruptCache" = "The remote sync cache is damaged. Local statistics were kept and the cache will be fetched again.";
-"import.error.syncEnabled" = "Legacy import is disabled while device sync is enabled.";
 "import.disabled.title" = "Import Unavailable";
-"import.disabled.syncEnabled" = "Leave device sync before importing a legacy v1 file. Export still contains this device's local data only.";
-"button.resetThisDevice" = "Reset This Device";
-"stats.reset.local.title" = "Reset This Device's Today Stats?";
-"stats.reset.local.message" = "Only today's statistics on this Mac will be reset. Other devices are unaffected, and the zero snapshot will sync with a higher revision.";
 "button.cancel" = "Cancel";
 "button.confirm" = "Confirm";
 
@@ -587,3 +499,56 @@
 "keyboard.export.copyClean" = "Copy Without Date or Counts";
 "keyboard.export.copied" = "Image copied";
 "keyboard.export.copyFailed" = "Could not copy the image. Please try again.";
+
+// Local macOS settings
+"settings.page.general" = "General";
+"settings.page.appearance" = "Menu & Appearance";
+"settings.page.notifications" = "Notifications";
+"settings.page.data" = "Data";
+"settings.page.general.help" = "Choose how Keytide starts and what it counts.";
+"settings.page.appearance.help" = "Make the menu bar and Keyboard Studio feel right for you.";
+"settings.page.notifications.help" = "Set milestones for your daily keyboard and mouse activity.";
+"settings.page.data.help" = "Calibrate distances, transfer your records, or start fresh.";
+"settings.localOnly" = "Local records. No input text.";
+"settings.section.feedback" = "Input feedback";
+"settings.data.calibration" = "Distance calibration";
+"settings.data.calibrationHelp" = "Match mouse distance to your display and pointer settings.";
+"settings.data.transfer" = "Import & export";
+"settings.data.transferHelp" = "Save a JSON backup or bring in records from another installation.";
+"settings.data.reset" = "Reset statistics";
+"settings.data.resetHelp" = "Clear today’s counts. Your saved history stays available.";
+
+"settings.navigation.general" = "General";
+"settings.navigation.appearance" = "Appearance";
+"settings.navigation.notifications" = "Notifications";
+"settings.navigation.data" = "Data";
+
+/* Activity calendar navigation */
+"heatmap.navigationHint" = "Click to select a day; arrow keys browse dates. Double-click or press Return to open cumulative keyboard growth through that day. Counts here are daily; an empty day means no recorded activity.";
+"heatmap.noSelection" = "No day selected";
+
+/* Activity exploration and app list filtering */
+"heatmap.metricLabel" = "Activity metric";
+"heatmap.metric.combined" = "All";
+"heatmap.metric.keys" = "Keys";
+"heatmap.metric.clicks" = "Clicks";
+"heatmap.relativeIntensity" = "Colors show relative %@ intensity within the displayed period. Empty days mean no recorded activity, not necessarily no computer use.";
+"heatmap.selectionPrompt" = "Select a date to see daily counts. Totals above remain all-time.";
+"heatmap.openGrowth" = "View Keyboard Growth";
+"heatmap.outsideCalendar" = "This date is outside the calendar";
+"heatmap.outsideCalendarDetail" = "You can still view cumulative keyboard growth through this date. The calendar will not be extended.";
+"heatmap.locateDate" = "Select this day in the activity calendar";
+"insights.activeDayAverage" = "Average per active day for this metric";
+"appStats.searchPlaceholder" = "Search apps";
+"appStats.matchCount" = "%d of %d apps match";
+"appStats.clearSearch" = "Clear Search";
+"appStats.noSearchResults" = "No apps match this search";
+
+"activity.topKeys.allTime" = "Most Used Keys · All Time";
+"activity.calendarIntensity" = "Color shows relative daily activity";
+
+// Activity insights: playful copy with explicit aggregate meaning.
+"activity.insight.keyboardPeak" = "The keyboard’s busiest day";
+"activity.insight.mousePeak" = "The mouse’s busiest day";
+"activity.insight.revision" = "Deleting is progress, too. Share of Backspace/Delete presses.";
+"activity.insight.recordedDays" = "%d days with recorded activity. Quiet squares are gaps in the record, not a verdict on your day.";

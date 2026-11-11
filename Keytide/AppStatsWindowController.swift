@@ -14,8 +14,8 @@ final class AppStatsWindowController: NSWindowController {
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
         window.backgroundColor = .windowBackgroundColor
-        window.setContentSize(NSSize(width: 600, height: 680))
-        window.minSize = NSSize(width: 520, height: 520)
+        window.setContentSize(NSSize(width: 760, height: 680))
+        window.minSize = NSSize(width: 660, height: 520)
         window.isReleasedWhenClosed = false
         window.center()
 

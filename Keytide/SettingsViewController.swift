@@ -20,7 +20,26 @@ private func resolvedCGColor(_ color: NSColor, alpha: CGFloat, for view: NSView)
     return resolved
 }
 
-final class SettingsViewController: NSViewController, NSTextFieldDelegate {
+private final class SettingsDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+private final class SettingsNavigationRow: NSTableRowView {
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard isSelected else { return }
+        NSColor.systemBlue.withAlphaComponent(0.12).setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 7, yRadius: 7).fill()
+    }
+}
+
+final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
+
+    private let navigation = NSTableView()
+    private var pages: [[NSView]] = []
+    private let pageKeys = ["general", "appearance", "notifications", "data"]
+    private let pageSymbols = ["gearshape", "menubar.rectangle", "bell", "externaldrive"]
+    private var selectedPage = 0
 
     private var scrollView: NSScrollView!
     private var documentView: NSView!
@@ -57,8 +76,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     private var importButton: NSButton!
     private var exportButton: NSButton!
     private var mouseDistanceCalibrationButton: NSButton!
-    private var syncStatusLabel: NSTextField!
-    private var manageSyncButton: NSButton!
     private var showThresholdsButton: NSSwitch!
     private var thresholdStack: NSStackView!
     private var keyPressThresholdField: NSTextField!
@@ -74,7 +91,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     private var appearanceObservation: NSKeyValueObservation?
     private var systemThemeObserver: NSObjectProtocol?
     private var appDidBecomeActiveObserver: NSObjectProtocol?
-    private var syncStateObserver: NSObjectProtocol?
 
     private let thresholdMinimum = 0
     private let thresholdMaximum = 1_000_000
@@ -112,7 +128,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     // MARK: - Lifecycle
 
     override func loadView() {
-        let mainView = AppearanceTrackingView(frame: NSRect(x: 0, y: 0, width: 520, height: 680))
+        let mainView = AppearanceTrackingView(frame: NSRect(x: 0, y: 0, width: 840, height: 650))
         mainView.onEffectiveAppearanceChange = { [weak self] in
             self?.updateAppearance()
         }
@@ -148,13 +164,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         ) { [weak self] _ in
             self?.updateAppearance()
         }
-        syncStateObserver = NotificationCenter.default.addObserver(
-            forName: .syncStateDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.updateState()
-        }
+
     }
 
     override func viewWillAppear() {
@@ -184,42 +194,52 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         if let observer = appDidBecomeActiveObserver {
             NotificationCenter.default.removeObserver(observer)
         }
-        if let observer = syncStateObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
+
     }
 
     // MARK: - UI
 
     private func setupUI() {
+        let sidebar = NSVisualEffectView()
+        sidebar.material = .sidebar
+        sidebar.blendingMode = .withinWindow
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(sidebar)
+        let sidebarStack = NSStackView()
+        sidebarStack.orientation = .vertical
+        sidebarStack.alignment = .leading
+        sidebarStack.spacing = 20
+        sidebarStack.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(sidebarStack)
+
         scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         view.addSubview(scrollView)
 
-        documentView = NSView()
+        documentView = SettingsDocumentView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = documentView
 
         contentStack = NSStackView()
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
-        contentStack.spacing = 16
+        contentStack.spacing = 20
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(contentStack)
 
         appIconView = NSImageView()
-        appIconView.image = NSImage(named: "AppIcon") ?? NSApp.applicationIconImage
+        appIconView.image = NSApp.applicationIconImage
         appIconView.imageScaling = .scaleProportionallyUpOrDown
         appIconView.translatesAutoresizingMaskIntoConstraints = false
         appIconView.widthAnchor.constraint(equalToConstant: 44).isActive = true
         appIconView.heightAnchor.constraint(equalToConstant: 44).isActive = true
 
         headerTitleLabel = NSTextField(labelWithString: NSLocalizedString("settings.windowTitle", comment: ""))
-        headerTitleLabel.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
+        headerTitleLabel.font = NSFont.systemFont(ofSize: 26, weight: .bold)
 
-        headerSubtitleLabel = NSTextField(labelWithString: NSLocalizedString("settings.header.subtitle", comment: ""))
+        headerSubtitleLabel = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.header.subtitle", comment: ""))
         headerSubtitleLabel.font = NSFont.systemFont(ofSize: 12)
         headerSubtitleLabel.textColor = .secondaryLabelColor
 
@@ -253,7 +273,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         ])
         applyBundledGitHubIconIfNeeded()
 
-        let headerTextStack = NSStackView(views: [headerTitleLabel, headerSubtitleLabel, versionLabel])
+        let headerTextStack = NSStackView(views: [headerTitleLabel, headerSubtitleLabel])
         headerTextStack.orientation = .vertical
         headerTextStack.alignment = .leading
         headerTextStack.spacing = 2
@@ -263,7 +283,50 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         headerSpacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let headerStack = NSStackView(views: [appIconView, headerTextStack, headerSpacer, githubButton])
+        let headerStack = NSStackView(views: [headerTextStack, headerSpacer, githubButton])
+        let brand = NSTextField(labelWithString: "Keytide")
+        brand.font = .systemFont(ofSize: 18, weight: .semibold)
+        let identity = NSStackView(views: [appIconView, brand])
+        identity.orientation = .horizontal
+        identity.spacing = 10
+        identity.alignment = .centerY
+        sidebarStack.addArrangedSubview(identity)
+        navigation.frame = NSRect(x: 0, y: 0, width: 162, height: 190)
+        navigation.autoresizingMask = [.width]
+        navigation.headerView = nil
+        navigation.style = .plain
+        navigation.backgroundColor = .clear
+        navigation.rowHeight = 36
+        navigation.intercellSpacing = NSSize(width: 0, height: 6)
+        navigation.selectionHighlightStyle = .none
+        navigation.allowsEmptySelection = false
+        navigation.focusRingType = .none
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("category"))
+        navigation.addTableColumn(column)
+        navigation.dataSource = self
+        navigation.delegate = self
+        let navigationScroll = NSScrollView()
+        navigationScroll.drawsBackground = false
+        navigationScroll.documentView = navigation
+        navigationScroll.hasVerticalScroller = false
+        navigationScroll.translatesAutoresizingMaskIntoConstraints = false
+        sidebarStack.addArrangedSubview(navigationScroll)
+        navigationScroll.widthAnchor.constraint(equalTo: sidebarStack.widthAnchor).isActive = true
+        navigationScroll.heightAnchor.constraint(equalToConstant: 190).isActive = true
+        let sidebarFooter = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.localOnly", comment: ""))
+        sidebarFooter.font = .systemFont(ofSize: 11)
+        sidebarFooter.textColor = .secondaryLabelColor
+        sidebarStack.addArrangedSubview(sidebarFooter)
+        sidebarStack.addArrangedSubview(versionLabel)
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: view.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: 190),
+            sidebarStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 16),
+            sidebarStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
+            sidebarStack.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 26)
+        ])
         headerStack.orientation = .horizontal
         headerStack.alignment = .centerY
         headerStack.spacing = 12
@@ -323,7 +386,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         ])
 
         let menuBarSection = makeSection(titleKey: "settings.section.menuBar", content: menuBarStack)
-        addArrangedSubviewFillingWidth(menuBarSection, to: contentStack)
 
         let dynamicIconRow = makeSwitchRow(titleKey: "settings.dynamicIconColor",
                                            toggle: dynamicIconColorButton,
@@ -370,16 +432,16 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         addArrangedSubviewFillingWidth(appStatsRow, to: trackingStack)
         addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: trackingStack)
         addArrangedSubviewFillingWidth(launchRow, to: trackingStack)
-        addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: trackingStack)
-        addArrangedSubviewFillingWidth(dynamicIconRow, to: trackingStack)
 
         dynamicIconOptionsContainer = makeVerticalStack(spacing: 6)
         addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: dynamicIconOptionsContainer)
         addArrangedSubviewFillingWidth(dynamicIndentedStack, to: dynamicIconOptionsContainer)
-        addArrangedSubviewFillingWidth(dynamicIconOptionsContainer, to: trackingStack)
+        let inputFeedback = makeVerticalStack(spacing: 8)
+        addArrangedSubviewFillingWidth(dynamicIconRow, to: inputFeedback)
+        addArrangedSubviewFillingWidth(dynamicIconOptionsContainer, to: inputFeedback)
+        let feedbackSection = makeSection(titleKey: "settings.section.feedback", content: inputFeedback)
 
         let trackingSection = makeSection(titleKey: "settings.section.tracking", content: trackingStack)
-        addArrangedSubviewFillingWidth(trackingSection, to: contentStack)
 
         keyPressThresholdField = makeThresholdField()
         keyPressThresholdStepper = makeThresholdStepper(action: #selector(keyPressThresholdStepperChanged))
@@ -411,24 +473,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         addArrangedSubviewFillingWidth(notificationThresholdContainer, to: notificationStack)
 
         let notificationSection = makeSection(titleKey: "settings.section.notifications", content: notificationStack)
-        addArrangedSubviewFillingWidth(notificationSection, to: contentStack)
-
-        syncStatusLabel = NSTextField(wrappingLabelWithString: "")
-        syncStatusLabel.textColor = .secondaryLabelColor
-        syncStatusLabel.maximumNumberOfLines = 0
-        manageSyncButton = NSButton(
-            title: NSLocalizedString("sync.action.manage", comment: ""),
-            target: self,
-            action: #selector(openSyncSettings)
-        )
-        manageSyncButton.bezelStyle = .rounded
-        let syncRow = NSStackView(views: [syncStatusLabel, NSView(), manageSyncButton])
-        syncRow.orientation = .horizontal
-        syncRow.alignment = .centerY
-        syncRow.spacing = 12
-        syncStatusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let syncSection = makeSection(titleKey: "settings.section.sync", content: syncRow)
-        addArrangedSubviewFillingWidth(syncSection, to: contentStack)
 
         mouseDistanceCalibrationButton = NSButton(title: NSLocalizedString("settings.mouseDistanceCalibration", comment: ""),
                                                   target: self,
@@ -456,37 +500,106 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         resetButton.bezelColor = nil
         resetButton.contentTintColor = nil
 
-        let actionStack = NSStackView(views: [mouseDistanceCalibrationButton, importButton, exportButton, resetButton])
-        actionStack.orientation = .horizontal
-        actionStack.alignment = .centerY
-        actionStack.spacing = 10
+        let actionStack = makeVerticalStack(spacing: 14)
+        addArrangedSubviewFillingWidth(makeActionRow("settings.data.calibration", help: "settings.data.calibrationHelp", button: mouseDistanceCalibrationButton), to: actionStack)
+        addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: actionStack)
+        let transferButtons = NSStackView(views: [importButton, exportButton])
+        transferButtons.spacing = 8
+        addArrangedSubviewFillingWidth(makeLabeledRow(title: NSLocalizedString("settings.data.transfer", comment: ""), control: transferButtons), to: actionStack)
+        let transferHelp = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.data.transferHelp", comment: ""))
+        transferHelp.font = .systemFont(ofSize: 11)
+        transferHelp.textColor = .secondaryLabelColor
+        addArrangedSubviewFillingWidth(transferHelp, to: actionStack)
+        let resetSection = makeSection(titleKey: "settings.data.reset", content: makeActionRow("settings.data.reset", help: "settings.data.resetHelp", button: resetButton))
+        resetButton.contentTintColor = .systemRed
 
         let actionSection = makeSection(titleKey: "settings.section.data", content: actionStack)
-        addArrangedSubviewFillingWidth(actionSection, to: contentStack)
 
-        let bottomSpacer = NSView()
-        bottomSpacer.translatesAutoresizingMaskIntoConstraints = false
-        bottomSpacer.setContentHuggingPriority(.init(1), for: .vertical)
-        contentStack.addArrangedSubview(bottomSpacer)
-        contentStack.setCustomSpacing(0, after: actionSection)
+        pages = [[trackingSection], [menuBarSection, feedbackSection], [notificationSection], [actionSection, resetSection]]
+        navigation.reloadData()
+        navigation.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        showPage(0)
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
             documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
             documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            documentView.bottomAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.bottomAnchor),
             documentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
 
-            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 20),
-            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 20),
-            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -20),
+            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 28),
+            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 28),
+            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -28),
             contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -24)
         ])
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        SettingsNavigationRow()
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { pageKeys.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let cell = NSTableCellView()
+        let label = NSTextField(labelWithString: NSLocalizedString("settings.navigation." + pageKeys[row], comment: ""))
+        let icon = NSImageView(image: NSImage(systemSymbolName: pageSymbols[row], accessibilityDescription: nil)!)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        icon.contentTintColor = .secondaryLabelColor
+        for child in [icon, label] { child.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(child) }
+        cell.textField = label; cell.imageView = icon
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+            icon.widthAnchor.constraint(equalToConstant: 17), icon.heightAnchor.constraint(equalToConstant: 17),
+            icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+        ])
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        guard navigation.selectedRow >= 0 else { return }
+        showPage(navigation.selectedRow)
+    }
+
+    private func showPage(_ index: Int) {
+        guard pages.indices.contains(index) else { return }
+        selectedPage = index
+        // The first arranged subview is the shared page header.
+        for child in Array(contentStack.arrangedSubviews.dropFirst()) {
+            contentStack.removeArrangedSubview(child)
+            child.removeFromSuperview()
+        }
+        headerTitleLabel.stringValue = NSLocalizedString("settings.page." + pageKeys[index], comment: "")
+        headerSubtitleLabel.stringValue = NSLocalizedString("settings.page." + pageKeys[index] + ".help", comment: "")
+        for section in pages[index] { addArrangedSubviewFillingWidth(section, to: contentStack) }
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func makeActionRow(_ title: String, help: String, button: NSButton) -> NSView {
+        let text = NSTextField(wrappingLabelWithString: NSLocalizedString(title, comment: ""))
+        text.font = .systemFont(ofSize: 13, weight: .medium)
+        let detail = NSTextField(wrappingLabelWithString: NSLocalizedString(help, comment: ""))
+        detail.font = .systemFont(ofSize: 11)
+        detail.textColor = .secondaryLabelColor
+        let labels = NSStackView(views: [text, detail])
+        labels.orientation = .vertical; labels.alignment = .leading; labels.spacing = 4
+        return makeLabeledRowView(labels: labels, control: button)
+    }
+
+    private func makeLabeledRowView(labels: NSView, control: NSView) -> NSView {
+        let row = NSStackView(views: [labels, NSView(), control])
+        row.orientation = .horizontal; row.spacing = 16; row.alignment = .centerY
+        labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        control.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return row
     }
 
     private func makeSection(titleKey: String, content: NSView) -> NSView {
@@ -499,10 +612,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         card.addSubview(content)
 
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
-            content.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 10),
-            content.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -10),
-            content.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10)
+            content.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            content.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            content.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            content.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16)
         ])
 
         cardViews.append(card)
@@ -723,10 +836,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
             } else {
                 layer.backgroundColor = resolvedCGColor(NSColor.controlBackgroundColor, alpha: 0.88, for: view)
             }
-            layer.borderWidth = 0
-            layer.borderColor = nil
+            layer.borderWidth = 0.5
+            layer.borderColor = resolvedCGColor(.separatorColor, alpha: 0.25, for: view)
             layer.shadowColor = resolvedCGColor(shadowColor, for: view)
-            layer.shadowOpacity = 1
+            layer.shadowOpacity = 0
             layer.shadowRadius = 8
             layer.shadowOffset = NSSize(width: 0, height: -1)
         }
@@ -781,28 +894,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         showThresholdsButton.state = notificationsEnabled ? .on : .off
         notificationThresholdContainer.isHidden = !notificationsEnabled
         updateThresholdUI()
-        updateSyncState()
-    }
-
-    private func updateSyncState() {
-        let coordinator = SyncCoordinator.shared
-        let state = coordinator.state
-        if !coordinator.isServiceConfigured {
-            syncStatusLabel.stringValue = NSLocalizedString("sync.status.serviceNotConfigured", comment: "")
-        } else if state.needsRepair {
-            syncStatusLabel.stringValue = NSLocalizedString("sync.status.needsRepair", comment: "")
-        } else if !state.isConfigured {
-            syncStatusLabel.stringValue = NSLocalizedString("sync.status.off", comment: "")
-        } else if state.activeDeviceCount < 2 {
-            syncStatusLabel.stringValue = NSLocalizedString("sync.status.singleDevice", comment: "")
-        } else {
-            syncStatusLabel.stringValue = NSLocalizedString("sync.status.on", comment: "")
-        }
-        importButton?.isEnabled = !coordinator.blocksLegacyImport
-        importButton?.toolTip = coordinator.blocksLegacyImport ? NSLocalizedString("import.disabled.syncEnabled", comment: "") : nil
-        resetButton?.title = state.isConfigured
-            ? NSLocalizedString("button.resetThisDevice", comment: "")
-            : NSLocalizedString("button.reset", comment: "")
     }
 
     private func updateDynamicIconColorStyleSelection() {
@@ -1164,11 +1255,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
         MouseDistanceCalibrationWindowController.shared.show()
     }
 
-    @objc private func openSyncSettings() {
-        AppDelegate.trackClick("open_sync_settings")
-        SyncSettingsWindowController.shared.show()
-    }
-
     @objc private func openGitHubRepository() {
         guard let url = githubRepositoryURL else { return }
         AppDelegate.trackClick("open_github_repository")
@@ -1177,11 +1263,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
 
     @objc private func resetStats() {
         let alert = NSAlert()
-        let appIcon = NSImage(named: "AppIcon") ?? NSApp.applicationIconImage
+        let appIcon = NSApp.applicationIconImage
         alert.icon = appIcon
-        let syncEnabled = SyncCoordinator.shared.isConfigured
-        alert.messageText = NSLocalizedString(syncEnabled ? "stats.reset.local.title" : "stats.reset.title", comment: "")
-        alert.informativeText = NSLocalizedString(syncEnabled ? "stats.reset.local.message" : "stats.reset.message", comment: "")
+        alert.messageText = NSLocalizedString("stats.reset.title", comment: "")
+        alert.informativeText = NSLocalizedString("stats.reset.message", comment: "")
         alert.alertStyle = .warning
         alert.addButton(withTitle: NSLocalizedString("stats.reset.confirm", comment: ""))
         alert.addButton(withTitle: NSLocalizedString("stats.reset.cancel", comment: ""))
@@ -1216,14 +1301,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
     }
 
     @objc private func importData() {
-        guard !SyncCoordinator.shared.blocksLegacyImport else {
-            let alert = NSAlert()
-            alert.messageText = NSLocalizedString("import.disabled.title", comment: "")
-            alert.informativeText = NSLocalizedString("import.disabled.syncEnabled", comment: "")
-            alert.addButton(withTitle: NSLocalizedString("button.ok", comment: ""))
-            alert.runModal()
-            return
-        }
+
         AppDelegate.trackClick("import_data")
         let openPanel = NSOpenPanel()
         openPanel.allowedFileTypes = ["json"]
@@ -1263,7 +1341,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
 
     private func confirmAndImport(from url: URL) {
         let alert = NSAlert()
-        let appIcon = NSImage(named: "AppIcon") ?? NSApp.applicationIconImage
+        let appIcon = NSApp.applicationIconImage
         alert.icon = appIcon
         alert.messageText = NSLocalizedString("import.confirm.title", comment: "")
         alert.informativeText = NSLocalizedString("import.confirm.message", comment: "")
@@ -1284,7 +1362,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate {
 
     private func confirmModeAndImport(from url: URL, mode: StatsManager.ImportMode) {
         let alert = NSAlert()
-        let appIcon = NSImage(named: "AppIcon") ?? NSApp.applicationIconImage
+        let appIcon = NSApp.applicationIconImage
         alert.icon = appIcon
         alert.messageText = NSLocalizedString("import.confirm.mode.title", comment: "")
         alert.alertStyle = .warning

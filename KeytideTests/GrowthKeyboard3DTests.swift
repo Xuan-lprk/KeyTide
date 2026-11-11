@@ -194,7 +194,7 @@ final class GrowthKeyboard3DTests: XCTestCase {
         defaults.set(try JSONEncoder().encode(today), forKey: "dailyStats")
         let manager = StatsManager(environment: .init(userDefaults: defaults, now: { now }, calendar: { calendar },
             makeDateKeyFormatter: { formatter.copy() as! DateFormatter }, notificationCenter: NotificationCenter(),
-            schedulesAutomaticWork: false, blocksLegacyImport: { false }, syncDisplayContext: { nil },
+            schedulesAutomaticWork: false,
             sendThresholdNotification: { _, _, _ in }))
         let page = GrowthKeyboardViewController(manager: manager)
         page.refreshData(resetToToday: true)

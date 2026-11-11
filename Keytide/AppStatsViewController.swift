@@ -1,23 +1,26 @@
-import Cocoa
+import AppKit
 
-final class AppStatsViewController: NSViewController {
-    private var scrollView: NSScrollView!
-    private var documentView: NSView!
-    private var containerStack: NSStackView!
-    private var titleLabel: NSTextField!
-    private var subtitleLabel: NSTextField!
+final class AppStatsViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     private var rangeControl: NSSegmentedControl!
-    private var summaryLabel: NSTextField!
-    private var listHeaderView: AppStatsHeaderRowView!
-    private var listStack: NSStackView!
-    private var emptyStateLabel: NSTextField!
-    private var separatorLine: NSView!
-    private var appearanceObservation: NSKeyValueObservation?
-    private var sortMetric: SortMetric = .keys
+    private var searchField: NSSearchField!
+    private var tableView: NSTableView!
+    private var scrollView: NSScrollView!
+    private var tableHeader: NSView!
+    private var matchCountLabel: NSTextField!
+    private var emptyTitleLabel: NSTextField!
+    private var emptyDetailLabel: NSTextField!
+    private var emptyButton: NSButton!
+    private var emptyPanel: NSView!
+    private var summaryTitleLabel: NSTextField!
+    private var summaryPanel: StatsPanelView!
+    private var keyMetric: StatsMetricView!
+    private var clickMetric: StatsMetricView!
+    private var scrollMetric: StatsMetricView!
+    private var sortMetric: AppStatsSortMetric = .keys
+    private var sortAscending = false
+    private var rangeItems: [AppStats] = []
+    private var visibleItems: [AppStats] = []
     private var appIconCache: [String: NSImage] = [:]
-    private lazy var defaultAppIcon: NSImage = {
-        NSWorkspace.shared.icon(forFileType: "app")
-    }()
 
     private lazy var numberFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -25,940 +28,436 @@ final class AppStatsViewController: NSViewController {
         return formatter
     }()
 
-    // MARK: - Lifecycle
+    private lazy var defaultAppIcon = NSWorkspace.shared.icon(forFileType: "app")
 
     override func loadView() {
-        let view = AppearanceTrackingView(frame: NSRect(x: 0, y: 0, width: 560, height: 640))
-        view.onEffectiveAppearanceChange = { [weak self] in
-            self?.updateAppearance()
-        }
-        view.wantsLayer = true
-        view.layer?.backgroundColor = resolvedCGColor(NSColor.windowBackgroundColor, for: view)
-        self.view = view
+        let content = AppearanceTrackingView(frame: NSRect(x: 0, y: 0, width: 760, height: 680))
+        content.wantsLayer = true
+        content.onEffectiveAppearanceChange = { [weak self] in self?.updateAppearance() }
+        view = content
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
-        refreshData()
-        updateAppearance() // 初始化 appearance
-        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async {
-                self?.updateAppearance()
-            }
-        }
+        reloadRange(preserveScroll: false)
+        updateAppearance()
     }
 
     override func viewWillAppear() {
         super.viewWillAppear()
-        refreshData()
+        reloadRange(preserveScroll: true)
     }
-    
-    deinit {
-        appearanceObservation = nil
-    }
-
-    // MARK: - UI
 
     private func setupUI() {
-        let headerContainer = NSView()
-        headerContainer.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(headerContainer)
-
-        listHeaderView = AppStatsHeaderRowView()
-        listHeaderView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(listHeaderView)
-
-        // Separator line under header
-        separatorLine = NSView()
-        separatorLine.translatesAutoresizingMaskIntoConstraints = false
-        separatorLine.wantsLayer = true
-        separatorLine.layer?.backgroundColor = NSColor.separatorColor.cgColor
-        view.addSubview(separatorLine)
-
-        scrollView = NSScrollView(frame: view.bounds)
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
-        view.addSubview(scrollView)
-
-        NSLayoutConstraint.activate([
-            headerContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            headerContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            headerContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-
-            listHeaderView.topAnchor.constraint(equalTo: headerContainer.bottomAnchor, constant: 12),
-            listHeaderView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
-            listHeaderView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
-
-            separatorLine.topAnchor.constraint(equalTo: listHeaderView.bottomAnchor, constant: 8),
-            separatorLine.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
-            separatorLine.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
-            separatorLine.heightAnchor.constraint(equalToConstant: 1),
-
-            scrollView.topAnchor.constraint(equalTo: separatorLine.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-
-        documentView = FlippedView()
-        documentView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = documentView
-
-        containerStack = NSStackView()
-        containerStack.orientation = .vertical
-        containerStack.alignment = .leading
-        containerStack.spacing = 18
-        containerStack.edgeInsets = NSEdgeInsets(top: 0, left: 28, bottom: 28, right: 28)
-        containerStack.translatesAutoresizingMaskIntoConstraints = false
-        documentView.addSubview(containerStack)
-
-        NSLayoutConstraint.activate([
-            containerStack.topAnchor.constraint(equalTo: documentView.topAnchor),
-            containerStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
-            containerStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-            containerStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor),
-            containerStack.widthAnchor.constraint(equalTo: scrollView.widthAnchor)
-        ])
+        let titleLabel = StatsWindowStyle.title("appStats.title")
+        let subtitleLabel = StatsWindowStyle.secondaryLabel(NSLocalizedString("appStats.subtitle", comment: ""), wrapping: true)
+        summaryTitleLabel = StatsWindowStyle.secondaryLabel(NSLocalizedString("appStats.rangeSummary", comment: ""))
 
         rangeControl = NSSegmentedControl(labels: [
             NSLocalizedString("appStats.range.today", comment: ""),
             NSLocalizedString("appStats.range.week", comment: ""),
             NSLocalizedString("appStats.range.month", comment: ""),
             NSLocalizedString("appStats.range.all", comment: "")
-        ], trackingMode: .selectOne, target: self, action: #selector(controlsChanged))
+        ], trackingMode: .selectOne, target: self, action: #selector(rangeChanged))
         rangeControl.selectedSegment = 0
+        rangeControl.controlSize = .regular
 
-        rangeControl.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        rangeControl.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        searchField = NSSearchField()
+        searchField.placeholderString = NSLocalizedString("appStats.searchPlaceholder", comment: "")
+        searchField.target = self
+        searchField.action = #selector(searchChanged)
+        searchField.sendsSearchStringImmediately = true
+        searchField.setAccessibilityLabel(searchField.placeholderString)
+        searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        let searchWidth = searchField.widthAnchor.constraint(equalToConstant: 220)
+        searchWidth.priority = .defaultHigh
+        searchWidth.isActive = true
 
-        let controlsStack = NSStackView(views: [rangeControl])
-        controlsStack.orientation = .vertical
-        controlsStack.alignment = .leading
-        controlsStack.spacing = 8
+        let toolbar = NSStackView(views: [rangeControl, NSView(), searchField])
+        toolbar.orientation = .horizontal
+        toolbar.alignment = .centerY
+        toolbar.spacing = 16
 
-        let headerStack = NSStackView()
-        headerStack.orientation = .vertical
-        headerStack.alignment = .leading
-        headerStack.spacing = 8
-        headerStack.translatesAutoresizingMaskIntoConstraints = false
-        headerContainer.addSubview(headerStack)
-
+        keyMetric = StatsMetricView(title: NSLocalizedString("appStats.column.keys", comment: ""), color: .systemBlue)
+        clickMetric = StatsMetricView(title: NSLocalizedString("appStats.column.clicks", comment: ""), color: .systemOrange)
+        scrollMetric = StatsMetricView(title: NSLocalizedString("appStats.column.scroll", comment: ""), color: .systemTeal)
+        let summaryMetrics = NSStackView(views: [keyMetric, clickMetric, scrollMetric])
+        summaryMetrics.orientation = .horizontal
+        summaryMetrics.distribution = .fillEqually
+        summaryMetrics.spacing = 20
+        summaryPanel = StatsPanelView()
+        summaryPanel.addSubview(summaryMetrics)
+        summaryMetrics.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            headerStack.topAnchor.constraint(equalTo: headerContainer.topAnchor, constant: 16),
-            headerStack.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 28),
-            headerStack.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -28),
-            headerStack.bottomAnchor.constraint(equalTo: headerContainer.bottomAnchor, constant: -12)
+            summaryMetrics.leadingAnchor.constraint(equalTo: summaryPanel.leadingAnchor, constant: 18),
+            summaryMetrics.trailingAnchor.constraint(equalTo: summaryPanel.trailingAnchor, constant: -18),
+            summaryMetrics.topAnchor.constraint(equalTo: summaryPanel.topAnchor, constant: 16),
+            summaryMetrics.bottomAnchor.constraint(equalTo: summaryPanel.bottomAnchor, constant: -16)
         ])
 
-        titleLabel = NSTextField(labelWithString: NSLocalizedString("appStats.title", comment: ""))
-        titleLabel.font = NSFont.systemFont(ofSize: 26, weight: .bold)
-        titleLabel.textColor = .labelColor
+        tableHeader = NSView()
+        matchCountLabel = StatsWindowStyle.secondaryLabel()
+        let listTitle = StatsWindowStyle.sectionTitle("appStats.listTitle")
+        let listHeaderStack = NSStackView(views: [listTitle, matchCountLabel, NSView()])
+        listHeaderStack.orientation = .horizontal
+        listHeaderStack.alignment = .centerY
+        listHeaderStack.spacing = 10
+        tableHeader.addSubview(listHeaderStack)
+        listHeaderStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            listHeaderStack.leadingAnchor.constraint(equalTo: tableHeader.leadingAnchor),
+            listHeaderStack.trailingAnchor.constraint(equalTo: tableHeader.trailingAnchor),
+            listHeaderStack.topAnchor.constraint(equalTo: tableHeader.topAnchor),
+            listHeaderStack.bottomAnchor.constraint(equalTo: tableHeader.bottomAnchor, constant: -10)
+        ])
 
-        subtitleLabel = NSTextField(wrappingLabelWithString: NSLocalizedString("appStats.subtitle", comment: ""))
-        subtitleLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        subtitleLabel.textColor = .secondaryLabelColor
+        tableView = NSTableView()
+        tableView.headerView = NSTableHeaderView()
+        tableView.rowHeight = 48
+        tableView.intercellSpacing = NSSize(width: 12, height: 4)
+        tableView.usesAlternatingRowBackgroundColors = false
+        tableView.style = .plain
+        tableView.backgroundColor = .clear
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.target = self
+        tableView.doubleAction = #selector(openSelectedApp)
+        tableView.allowsEmptySelection = true
+        tableView.setAccessibilityLabel(NSLocalizedString("appStats.listTitle", comment: ""))
+        addTableColumn(identifier: "app", titleKey: "appStats.column.app", width: 280, sortable: false)
+        addTableColumn(identifier: "keys", titleKey: "appStats.column.keys", width: 100, sortable: true)
+        addTableColumn(identifier: "clicks", titleKey: "appStats.column.clicks", width: 100, sortable: true)
+        addTableColumn(identifier: "scroll", titleKey: "appStats.column.scroll", width: 110, sortable: true)
 
-        headerStack.addArrangedSubview(titleLabel)
-        headerStack.addArrangedSubview(subtitleLabel)
-        headerStack.addArrangedSubview(controlsStack)
+        scrollView = NSScrollView()
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
 
-        emptyStateLabel = NSTextField(labelWithString: "")
-        emptyStateLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
-        emptyStateLabel.textColor = .secondaryLabelColor
-        emptyStateLabel.isHidden = true
+        emptyTitleLabel = NSTextField(labelWithString: "")
+        emptyTitleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        emptyTitleLabel.alignment = .center
+        emptyDetailLabel = StatsWindowStyle.secondaryLabel(wrapping: true)
+        emptyDetailLabel.alignment = .center
+        emptyDetailLabel.maximumNumberOfLines = 3
+        emptyButton = NSButton(title: "", target: self, action: #selector(emptyStateAction))
+        emptyButton.bezelStyle = .rounded
+        emptyButton.controlSize = .regular
+        let emptyStack = NSStackView(views: [emptyTitleLabel, emptyDetailLabel, emptyButton])
+        emptyStack.orientation = .vertical
+        emptyStack.alignment = .centerX
+        emptyStack.spacing = 10
+        emptyPanel = NSView()
+        emptyPanel.addSubview(emptyStack)
+        emptyStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            emptyStack.centerXAnchor.constraint(equalTo: emptyPanel.centerXAnchor),
+            emptyStack.centerYAnchor.constraint(equalTo: emptyPanel.centerYAnchor),
+            emptyStack.leadingAnchor.constraint(greaterThanOrEqualTo: emptyPanel.leadingAnchor, constant: 30),
+            emptyStack.trailingAnchor.constraint(lessThanOrEqualTo: emptyPanel.trailingAnchor, constant: -30)
+        ])
 
-        summaryLabel = NSTextField(labelWithString: "")
-        summaryLabel.font = NSFont.systemFont(ofSize: 12, weight: .regular)
-        summaryLabel.textColor = .secondaryLabelColor
-
-        headerStack.addArrangedSubview(emptyStateLabel)
-        headerStack.addArrangedSubview(summaryLabel)
-
-        listHeaderView.sortMetricHandler = { [weak self] metric in
-            self?.updateSortMetric(metric)
+        let listBody = NSView()
+        for child in [scrollView!, emptyPanel!] {
+            child.translatesAutoresizingMaskIntoConstraints = false
+            listBody.addSubview(child)
+            NSLayoutConstraint.activate([
+                child.leadingAnchor.constraint(equalTo: listBody.leadingAnchor),
+                child.trailingAnchor.constraint(equalTo: listBody.trailingAnchor),
+                child.topAnchor.constraint(equalTo: listBody.topAnchor),
+                child.bottomAnchor.constraint(equalTo: listBody.bottomAnchor)
+            ])
         }
-        listHeaderView.updateSortIndicator(selectedMetric: sortMetric)
-
-        listStack = NSStackView()
+        let listStack = NSStackView(views: [tableHeader, listBody])
         listStack.orientation = .vertical
         listStack.alignment = .leading
         listStack.spacing = 0
-        containerStack.addArrangedSubview(listStack)
-        listStack.widthAnchor.constraint(equalTo: containerStack.widthAnchor, constant: -56).isActive = true
+        listStack.translatesAutoresizingMaskIntoConstraints = false
+        tableHeader.widthAnchor.constraint(equalTo: listStack.widthAnchor).isActive = true
+        listBody.widthAnchor.constraint(equalTo: listStack.widthAnchor).isActive = true
+        listBody.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
 
-        containerStack.addArrangedSubview(NSView())
+        let contentStack = NSStackView(views: [titleLabel, subtitleLabel, toolbar, summaryTitleLabel, summaryPanel, listStack])
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.spacing = 12
+        contentStack.setCustomSpacing(20, after: subtitleLabel)
+        contentStack.setCustomSpacing(18, after: toolbar)
+        contentStack.setCustomSpacing(8, after: summaryTitleLabel)
+        contentStack.setCustomSpacing(20, after: summaryPanel)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(contentStack)
+
+        for child in [titleLabel, subtitleLabel, toolbar, summaryTitleLabel!, summaryPanel!, listStack] {
+            child.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+        }
+        NSLayoutConstraint.activate([
+            contentStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
+            contentStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
+            contentStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            contentStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -24)
+        ])
+        tableView.sortDescriptors = [NSSortDescriptor(key: "keys", ascending: false)]
     }
-
-    // MARK: - Data
 
     func refreshData() {
-        let statsManager = StatsManager.shared
-        if !statsManager.appStatsEnabled {
-            updateEmptyState(text: NSLocalizedString("appStats.disabled", comment: ""))
+        guard isViewLoaded else {
+            _ = view
             return
         }
-
-        let range = selectedRange()
-        var items = statsManager.appStatsSummary(range: range)
-        items = items.filter { $0.hasActivity }
-        items.sort { lhs, rhs in
-            let lhsValue = sortValue(for: lhs)
-            let rhsValue = sortValue(for: rhs)
-            if lhsValue != rhsValue {
-                return lhsValue > rhsValue
-            }
-            return displayName(for: lhs).localizedCaseInsensitiveCompare(displayName(for: rhs)) == .orderedAscending
-        }
-
-        updateSummary(with: items)
-        updateList(with: items)
+        reloadRange(preserveScroll: true)
     }
 
-    private func updateSummary(with items: [AppStats]) {
-        summaryLabel.isHidden = false
-        let totalKeys = items.reduce(0) { $0 + $1.keyPresses }
-        let totalClicks = items.reduce(0) { $0 + $1.totalClicks }
-        let totalScroll = items.reduce(0) { $0 + $1.scrollDistance }
-        let formattedKeys = formatNumber(totalKeys)
-        let formattedClicks = formatNumber(totalClicks)
-        let formattedScroll = formatScrollDistance(totalScroll)
-        summaryLabel.stringValue = String(
-            format: NSLocalizedString("appStats.summary", comment: ""),
-            formattedKeys,
-            formattedClicks,
-            formattedScroll
+    private func addTableColumn(identifier: String, titleKey: String, width: CGFloat, sortable: Bool) {
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
+        column.title = NSLocalizedString(titleKey, comment: "")
+        column.width = width
+        column.minWidth = identifier == "app" ? 160 : 80
+        column.resizingMask = identifier == "app" ? .autoresizingMask : .userResizingMask
+        if sortable {
+            column.sortDescriptorPrototype = NSSortDescriptor(key: identifier, ascending: false)
+            column.headerCell.setAccessibilityLabel(column.title + ", " + NSLocalizedString("appStats.sortable", comment: ""))
+        }
+        tableView.addTableColumn(column)
+    }
+
+    private func reloadRange(preserveScroll: Bool) {
+        let origin = scrollView.contentView.bounds.origin
+        guard StatsManager.shared.appStatsEnabled else {
+            rangeItems = []
+            updateSummary()
+            applyFilter()
+            return
+        }
+        rangeItems = StatsManager.shared.appStatsSummary(range: selectedRange()).filter(\.hasActivity)
+        updateSummary()
+        applyFilter()
+        if preserveScroll {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.scrollView.contentView.setBoundsOrigin(origin)
+            }
+        } else {
+            tableView.scrollToBeginningOfDocument(nil)
+        }
+    }
+
+    private func updateSummary() {
+        keyMetric.setValue(formatNumber(rangeItems.reduce(0) { $0 + $1.keyPresses }))
+        clickMetric.setValue(formatNumber(rangeItems.reduce(0) { $0 + $1.totalClicks }))
+        scrollMetric.setValue(formatScrollDistance(rangeItems.reduce(0) { $0 + $1.scrollDistance }))
+    }
+
+    private func applyFilter() {
+        let enabled = StatsManager.shared.appStatsEnabled
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        visibleItems = AppStatsListFilter.apply(
+            items: rangeItems,
+            query: query,
+            displayName: displayName(for:),
+            sortMetric: sortMetric,
+            ascending: sortAscending
         )
+        matchCountLabel.isHidden = query.isEmpty || !enabled
+        matchCountLabel.stringValue = String(format: NSLocalizedString("appStats.matchCount", comment: ""), visibleItems.count, rangeItems.count)
+        searchField.isEnabled = enabled
+        rangeControl.isEnabled = enabled
+        summaryPanel.isHidden = !enabled
+        summaryTitleLabel.isHidden = !enabled
+        scrollView.isHidden = !enabled || visibleItems.isEmpty
+        tableHeader.isHidden = !enabled
+        updateEmptyState(enabled: enabled, hasSearch: !query.isEmpty)
+        tableView.reloadData()
     }
 
-    private func updateList(with items: [AppStats]) {
-        listStack.arrangedSubviews.forEach {
-            listStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
-
-        guard !items.isEmpty else {
-            updateEmptyState(text: NSLocalizedString("appStats.empty", comment: ""))
+    private func updateEmptyState(enabled: Bool, hasSearch: Bool) {
+        guard !enabled || visibleItems.isEmpty else {
+            emptyPanel.isHidden = true
             return
         }
-
-        listHeaderView.isHidden = false
-        emptyStateLabel.isHidden = true
-
-        let maxKeys = Double(items.map { $0.keyPresses }.max() ?? 1)
-        let maxClicks = Double(items.map { $0.totalClicks }.max() ?? 1)
-        let maxScroll = items.map { $0.scrollDistance }.max() ?? 1
-
-        var rows: [AppStatsRowView] = []
-
-        for (index, item) in items.enumerated() {
-            let row = AppStatsRowView()
-            row.onOpenBreakdown = { [weak self, bundleId = item.bundleId] in
-                self?.showKeyBreakdown(bundleId: bundleId)
-            }
-            row.applyAlternatingBackground(isEvenRow: index.isMultiple(of: 2))
-            row.update(
-                name: displayName(for: item),
-                icon: appIcon(for: item.bundleId),
-                keys: Double(item.keyPresses),
-                clicks: Double(item.totalClicks),
-                scroll: item.scrollDistance,
-                maxKeys: maxKeys,
-                maxClicks: maxClicks,
-                maxScroll: maxScroll,
-                keysFormatted: formatNumber(item.keyPresses),
-                clicksFormatted: formatNumber(item.totalClicks),
-                scrollFormatted: formatScrollDistance(item.scrollDistance)
-            )
-            listStack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: listStack.widthAnchor).isActive = true
-            rows.append(row)
-        }
-
-        DispatchQueue.main.async {
-            for (index, row) in rows.enumerated() {
-                let delay = Double(index) * 0.03
-                row.animateBars(delay: delay)
-            }
+        emptyPanel.isHidden = false
+        emptyButton.isHidden = false
+        if !enabled {
+            emptyTitleLabel.stringValue = NSLocalizedString("appStats.disabled", comment: "")
+            emptyDetailLabel.stringValue = NSLocalizedString("appStats.disabledDetail", comment: "")
+            emptyButton.title = NSLocalizedString("appStats.openSettings", comment: "")
+        } else if hasSearch && !rangeItems.isEmpty {
+            emptyTitleLabel.stringValue = NSLocalizedString("appStats.noSearchResults", comment: "")
+            emptyDetailLabel.stringValue = NSLocalizedString("appStats.noSearchResultsDetail", comment: "")
+            emptyButton.title = NSLocalizedString("appStats.clearSearch", comment: "")
+        } else {
+            emptyTitleLabel.stringValue = NSLocalizedString("appStats.empty", comment: "")
+            emptyDetailLabel.stringValue = NSLocalizedString("appStats.emptyDetail", comment: "")
+            emptyButton.isHidden = true
         }
     }
 
-    private func showKeyBreakdown(bundleId: String) {
-        guard presentedViewControllers?.isEmpty != false,
-              StatsManager.shared.appStatsEnabled,
-              let app = StatsManager.shared.appStatsSummary(range: selectedRange())
-                .first(where: { $0.bundleId == bundleId }) else { return }
+    private func selectedRange() -> StatsManager.AppStatsRange {
+        [.today, .week, .month, .all][max(0, min(3, rangeControl.selectedSegment))]
+    }
+
+    private func displayName(for stats: AppStats) -> String {
+        stats.displayName.isEmpty ? NSLocalizedString("appStats.unknownApp", comment: "") : stats.displayName
+    }
+
+    private func formatNumber(_ value: Int) -> String {
+        numberFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private func formatScrollDistance(_ distance: Double) -> String {
+        distance >= 10000 ? String(format: "%.1f kPx", distance / 1000) : String(format: "%.0f px", distance)
+    }
+
+    private func appIcon(for bundleId: String) -> NSImage {
+        if let cached = appIconCache[bundleId] { return cached }
+        let icon: NSImage
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            icon = NSWorkspace.shared.icon(forFile: url.path)
+        } else {
+            icon = defaultAppIcon
+        }
+        icon.size = NSSize(width: 28, height: 28)
+        appIconCache[bundleId] = icon
+        return icon
+    }
+
+    private func showApp(_ app: AppStats) {
+        guard StatsManager.shared.appStatsEnabled, presentedViewControllers?.isEmpty != false else { return }
         let snapshot = AppDetailPresentation(
             app: app,
             profiles: StatsManager.shared.interactionProfiles(range: selectedRange()),
             rangeTitle: rangeControl.label(forSegment: rangeControl.selectedSegment) ?? "",
             supportedHeatmapKeys: KeyboardHeatmapView.supportedKeyIDs
         )
-        let detail = AppDetailViewController(snapshot: snapshot, icon: appIcon(for: app.bundleId))
-        presentAsSheet(detail)
+        presentAsSheet(AppDetailViewController(snapshot: snapshot, icon: appIcon(for: app.bundleId)))
     }
 
-    private func updateEmptyState(text: String) {
-        listHeaderView.isHidden = true
-        listStack.arrangedSubviews.forEach {
-            listStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
-        emptyStateLabel.stringValue = text
-        emptyStateLabel.isHidden = false
-        summaryLabel.stringValue = ""
-        summaryLabel.isHidden = true
-    }
-
-    private func displayName(for stats: AppStats) -> String {
-        if !stats.displayName.isEmpty {
-            return stats.displayName
-        }
-        return NSLocalizedString("appStats.unknownApp", comment: "")
-    }
-
-    private func sortValue(for stats: AppStats) -> Double {
-        switch sortMetric {
-        case .keys:
-            return Double(stats.keyPresses)
-        case .clicks:
-            return Double(stats.totalClicks)
-        case .scroll:
-            return stats.scrollDistance
-        }
-    }
-
-    private func formatNumber(_ number: Int) -> String {
-        return numberFormatter.string(from: NSNumber(value: number)) ?? "\(number)"
-    }
-
-    private func formatScrollDistance(_ distance: Double) -> String {
-        if distance >= 10000 {
-            return String(format: "%.1f kPx", distance / 1000)
-        }
-        return String(format: "%.0f px", distance)
-    }
-
-    private func appIcon(for bundleId: String) -> NSImage {
-        let trimmed = bundleId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let cached = appIconCache[trimmed] {
-            return cached
-        }
-        let source: NSImage
-        if !trimmed.isEmpty, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: trimmed) {
-            let workspaceIcon = NSWorkspace.shared.icon(forFile: url.path)
-            source = (workspaceIcon.copy() as? NSImage) ?? workspaceIcon
-        } else {
-            source = (defaultAppIcon.copy() as? NSImage) ?? defaultAppIcon
-        }
-        let icon = rasterizeAppIcon(source)
-        appIconCache[trimmed] = icon
-        return icon
-    }
-
-    // MARK: - Icon Rendering
-
-    private func rasterizeAppIcon(_ source: NSImage) -> NSImage {
-        let targetSize = NSSize(width: AppStatsLayout.appIconSize, height: AppStatsLayout.appIconSize)
-        guard let rep = makeIconRep(from: source, targetSize: targetSize) else { return source }
-        let image = NSImage(size: targetSize)
-        image.addRepresentation(rep)
-        return image
-    }
-
-    private func makeIconRep(from source: NSImage, targetSize: NSSize) -> NSBitmapImageRep? {
-        let scale: CGFloat = 2.0
-        let pixelWidth = max(1, Int(targetSize.width * scale))
-        let pixelHeight = max(1, Int(targetSize.height * scale))
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: pixelWidth,
-            pixelsHigh: pixelHeight,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ) else {
-            return nil
-        }
-        rep.size = targetSize
-
-        NSGraphicsContext.saveGraphicsState()
-        if let context = NSGraphicsContext(bitmapImageRep: rep) {
-            NSGraphicsContext.current = context
-            context.imageInterpolation = .high
-            source.draw(
-                in: NSRect(origin: .zero, size: targetSize),
-                from: NSRect(origin: .zero, size: source.size),
-                operation: .copy,
-                fraction: 1.0,
-                respectFlipped: false,
-                hints: nil
-            )
-        }
-        NSGraphicsContext.restoreGraphicsState()
-
-        return rep
-    }
-
-    // MARK: - Controls
-
-    @objc private func controlsChanged() {
-        refreshData()
-    }
-
-    private func updateSortMetric(_ metric: SortMetric) {
-        sortMetric = metric
-        listHeaderView.updateSortIndicator(selectedMetric: metric)
-        refreshData()
-    }
-
-    private func selectedRange() -> StatsManager.AppStatsRange {
-        switch rangeControl.selectedSegment {
-        case 0:
-            return .today
-        case 1:
-            return .week
-        case 2:
-            return .month
-        default:
-            return .all
-        }
-    }
-    
-    // MARK: - Appearance Updates
-    
     private func updateAppearance() {
-        // 更新主视图背景色
-        view.layer?.backgroundColor = resolvedCGColor(NSColor.windowBackgroundColor, for: view)
-        view.window?.backgroundColor = resolvedColor(NSColor.windowBackgroundColor, for: view)
-        
-        // 更新分隔线颜色
-        separatorLine.layer?.backgroundColor = resolvedCGColor(NSColor.separatorColor, for: view)
-        
-        // 更新列表行的背景色
-        for (index, row) in listStack.arrangedSubviews.enumerated() {
-            if let appRow = row as? AppStatsRowView {
-                appRow.applyAlternatingBackground(isEvenRow: index.isMultiple(of: 2))
-            }
-        }
-
-        // 通知所有子视图更新 appearance
-        view.needsDisplay = true
-        listHeaderView?.needsDisplay = true
-    }
-}
-
-final class AppearanceTrackingView: NSView {
-    var onEffectiveAppearanceChange: (() -> Void)?
-    private var appearanceChangeToken = UUID()
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        appearanceChangeToken = UUID()
-        let currentToken = appearanceChangeToken
-        let refreshDelays: [TimeInterval] = [0, 0.05, 0.15, 0.3]
-
-        for delay in refreshDelays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self = self, self.appearanceChangeToken == currentToken else { return }
-                self.onEffectiveAppearanceChange?()
-            }
-        }
-    }
-}
-
-private enum SortMetric {
-    case keys
-    case clicks
-    case scroll
-}
-
-private final class FlippedView: NSView {
-    override var isFlipped: Bool {
-        return true
-    }
-}
-
-private enum AppStatsLayout {
-    static let appColumnMaxWidth: CGFloat = 180
-    static let metricColumnWidth: CGFloat = 93
-    static let columnSpacing: CGFloat = 12
-    static let rowHeight: CGFloat = 32
-    static let rowCornerRadius: CGFloat = 8
-    static let headerHeight: CGFloat = 20
-    static let dividerThickness: CGFloat = 1
-    static let dividerHitWidth: CGFloat = 6
-    static let dividerVerticalInset: CGFloat = 0
-    static let appIconSize: CGFloat = 24
-    static let appIconSpacing: CGFloat = 6
-    static let appIconLeadingInset: CGFloat = 6
-    static let barHeight: CGFloat = 16
-    static let barCornerRadius: CGFloat = 4
-}
-
-private final class SortableHeaderLabel: NSTextField {
-    let metric: SortMetric
-    let baseText: String
-    var onClick: ((SortMetric) -> Void)?
-
-    init(text: String, metric: SortMetric) {
-        self.baseText = text
-        self.metric = metric
-        super.init(frame: .zero)
-        isEditable = false
-        isBordered = false
-        drawsBackground = false
-        isSelectable = false
-        stringValue = text
-        focusRingType = .none
+        guard isViewLoaded, tableView != nil else { return }
+        view.layer?.backgroundColor = statsResolvedCGColor(.windowBackgroundColor, for: view)
+        view.window?.backgroundColor = statsResolvedColor(.windowBackgroundColor, for: view)
+        tableView.backgroundColor = .clear
+        tableView.reloadData()
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        onClick?(metric)
-    }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .pointingHand)
-    }
-
-    func updateIndicator(_ indicator: String?) {
-        if let indicator = indicator, !indicator.isEmpty {
-            stringValue = "\(baseText) \(indicator)"
+    @objc private func rangeChanged() { reloadRange(preserveScroll: false) }
+    @objc private func searchChanged() { applyFilter() }
+    @objc private func emptyStateAction() {
+        if StatsManager.shared.appStatsEnabled {
+            searchField.stringValue = ""
+            applyFilter()
+            view.window?.makeFirstResponder(searchField)
         } else {
-            stringValue = baseText
+            SettingsWindowController.shared.show()
         }
     }
-}
 
-private final class AppStatsHeaderRowView: NSView {
-    private let sortIndicator = NSLocalizedString("appStats.sortIndicator", comment: "")
-    private var nameStack: NSStackView!
-    private var nameSpacer: NSView!
-    private var nameLabel: NSTextField!
-    private var keysLabel: SortableHeaderLabel!
-    private var clicksLabel: SortableHeaderLabel!
-    private var scrollLabel: SortableHeaderLabel!
-
-    var sortMetricHandler: ((SortMetric) -> Void)?
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setupUI()
+    @objc private func openSelectedApp() {
+        guard tableView.selectedRow >= 0, visibleItems.indices.contains(tableView.selectedRow) else { return }
+        showApp(visibleItems[tableView.selectedRow])
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+    func numberOfRows(in tableView: NSTableView) -> Int { visibleItems.count }
 
-    private func setupUI() {
-        translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: AppStatsLayout.headerHeight).isActive = true
-
-        nameLabel = makeHeaderLabel(text: NSLocalizedString("appStats.column.app", comment: ""), isNameColumn: true)
-        keysLabel = makeSortableHeaderLabel(text: NSLocalizedString("appStats.column.keys", comment: ""), metric: .keys)
-        clicksLabel = makeSortableHeaderLabel(text: NSLocalizedString("appStats.column.clicks", comment: ""), metric: .clicks)
-        scrollLabel = makeSortableHeaderLabel(text: NSLocalizedString("appStats.column.scroll", comment: ""), metric: .scroll)
-
-        nameSpacer = NSView()
-        nameStack = NSStackView(views: [nameSpacer, nameLabel])
-        nameStack.orientation = .horizontal
-        nameStack.alignment = .centerY
-        nameStack.spacing = AppStatsLayout.appIconSpacing
-        nameStack.edgeInsets = NSEdgeInsets(
-            top: 0,
-            left: AppStatsLayout.appIconLeadingInset,
-            bottom: 0,
-            right: 0
-        )
-        nameStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        nameStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let stack = NSStackView(views: [nameStack, keysLabel, clicksLabel, scrollLabel])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.distribution = .fill
-        stack.spacing = AppStatsLayout.columnSpacing
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-
-        NSLayoutConstraint.activate([
-            nameStack.widthAnchor.constraint(equalToConstant: AppStatsLayout.appColumnMaxWidth),
-            nameSpacer.widthAnchor.constraint(equalToConstant: AppStatsLayout.appIconSize),
-            // 三列等宽
-            keysLabel.widthAnchor.constraint(equalTo: clicksLabel.widthAnchor),
-            clicksLabel.widthAnchor.constraint(equalTo: scrollLabel.widthAnchor)
-        ])
-
-        addDividerView(after: nameStack)
-        addDividerView(after: keysLabel)
-        addDividerView(after: clicksLabel)
-    }
-
-    func updateSortIndicator(selectedMetric: SortMetric) {
-        let indicator = sortIndicator.isEmpty ? nil : sortIndicator
-        keysLabel.updateIndicator(selectedMetric == .keys ? indicator : nil)
-        clicksLabel.updateIndicator(selectedMetric == .clicks ? indicator : nil)
-        scrollLabel.updateIndicator(selectedMetric == .scroll ? indicator : nil)
-    }
-
-    private func makeHeaderLabel(text: String, isNameColumn: Bool) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        configureHeaderLabel(label, isNameColumn: isNameColumn)
-        return label
-    }
-
-    private func makeSortableHeaderLabel(text: String, metric: SortMetric) -> SortableHeaderLabel {
-        let label = SortableHeaderLabel(text: text, metric: metric)
-        configureHeaderLabel(label, isNameColumn: false)
-        label.onClick = { [weak self] metric in
-            self?.sortMetricHandler?(metric)
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard visibleItems.indices.contains(row), let tableColumn else { return nil }
+        let app = visibleItems[row]
+        let identifier = tableColumn.identifier.rawValue
+        if identifier == "app" {
+            let cell = AppStatsNameCellView()
+            cell.configure(name: displayName(for: app), icon: appIcon(for: app.bundleId)) { [weak self] in
+                self?.showApp(app)
+            }
+            return cell
         }
-        return label
-    }
-
-    private func configureHeaderLabel(_ label: NSTextField, isNameColumn: Bool) {
-        label.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = .secondaryLabelColor
-        label.alignment = isNameColumn ? .left : .center
-        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    }
-
-    private func addDividerView(after view: NSView) {
-        let dividerView = AppStatsColumnDividerView()
-        dividerView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(dividerView)
+        let value: String
+        switch identifier {
+        case "keys": value = formatNumber(app.keyPresses)
+        case "clicks": value = formatNumber(app.totalClicks)
+        default: value = formatScrollDistance(app.scrollDistance)
+        }
+        let label = NSTextField(labelWithString: value)
+        label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        label.textColor = .labelColor
+        label.alignment = .right
+        label.translatesAutoresizingMaskIntoConstraints = false
+        let cell = NSTableCellView()
+        cell.addSubview(label)
         NSLayoutConstraint.activate([
-            dividerView.centerXAnchor.constraint(
-                equalTo: view.trailingAnchor,
-                constant: AppStatsLayout.columnSpacing / 2
-            ),
-            dividerView.topAnchor.constraint(equalTo: topAnchor),
-            dividerView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            dividerView.widthAnchor.constraint(equalToConstant: AppStatsLayout.dividerHitWidth)
+            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
         ])
+        return cell
     }
+
+    func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+        guard let descriptor = tableView.sortDescriptors.first else { return }
+        switch descriptor.key {
+        case "keys": sortMetric = .keys
+        case "clicks": sortMetric = .clicks
+        case "scroll": sortMetric = .scroll
+        default: return
+        }
+        sortAscending = descriptor.ascending
+        applyFilter()
+    }
+
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { true }
 }
 
-private final class AppStatsRowView: NSView {
-    var onOpenBreakdown: (() -> Void)?
-    private var nameStack: NSStackView!
-    private var iconView: NSImageView!
-    private var nameButton: NSButton!
-    private var disclosureButton: NSButton!
-    private var keysBar: SingleBarView!
-    private var clicksBar: SingleBarView!
-    private var scrollBar: SingleBarView!
+private final class AppStatsNameCellView: NSTableCellView {
+    private let iconView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let detailButton: NSButton
 
     override init(frame frameRect: NSRect) {
+        let image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
+        detailButton = NSButton(image: image ?? NSImage(), target: nil, action: nil)
         super.init(frame: frameRect)
-        setupUI()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func setupUI() {
-        translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: AppStatsLayout.rowHeight).isActive = true
-
-        iconView = NSImageView()
         iconView.imageScaling = .scaleProportionallyDown
-        iconView.setContentHuggingPriority(.required, for: .horizontal)
-        iconView.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        nameButton = NSButton(title: "", target: self, action: #selector(openBreakdown))
-        nameButton.isBordered = false
-        nameButton.alignment = .left
-        nameButton.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        nameButton.contentTintColor = .labelColor
-        nameButton.lineBreakMode = .byTruncatingTail
-        nameButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        nameButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        disclosureButton = NSButton(image: NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)!,
-                                    target: self, action: #selector(openBreakdown))
-        disclosureButton.isBordered = false
-        disclosureButton.imageScaling = .scaleProportionallyDown
-        disclosureButton.contentTintColor = .secondaryLabelColor
-        disclosureButton.translatesAutoresizingMaskIntoConstraints = false
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        nameLabel.lineBreakMode = .byTruncatingTail
+        detailButton.isBordered = false
+        detailButton.imageScaling = .scaleProportionallyDown
+        detailButton.contentTintColor = .secondaryLabelColor
+        detailButton.target = self
+        detailButton.action = #selector(openDetails)
+        detailButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(iconView)
+        addSubview(nameLabel)
+        addSubview(detailButton)
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            disclosureButton.widthAnchor.constraint(equalToConstant: 18),
-            disclosureButton.heightAnchor.constraint(equalToConstant: 22)
-        ])
-        nameStack = NSStackView(views: [iconView, nameButton, disclosureButton])
-        nameStack.orientation = .horizontal
-        nameStack.alignment = .centerY
-        nameStack.spacing = AppStatsLayout.appIconSpacing
-        nameStack.edgeInsets = NSEdgeInsets(
-            top: 0,
-            left: AppStatsLayout.appIconLeadingInset,
-            bottom: 0,
-            right: 0
-        )
-        nameStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        nameStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        keysBar = SingleBarView(color: .systemBlue)
-        keysBar.translatesAutoresizingMaskIntoConstraints = false
-        clicksBar = SingleBarView(color: .systemGreen)
-        clicksBar.translatesAutoresizingMaskIntoConstraints = false
-        scrollBar = SingleBarView(color: .systemOrange)
-        scrollBar.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView(views: [nameStack, keysBar, clicksBar, scrollBar])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = AppStatsLayout.columnSpacing
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
-
-        NSLayoutConstraint.activate([
-            nameStack.widthAnchor.constraint(equalToConstant: AppStatsLayout.appColumnMaxWidth),
-            keysBar.heightAnchor.constraint(equalToConstant: AppStatsLayout.rowHeight),
-            clicksBar.heightAnchor.constraint(equalToConstant: AppStatsLayout.rowHeight),
-            scrollBar.heightAnchor.constraint(equalToConstant: AppStatsLayout.rowHeight),
-            // 三列等宽
-            keysBar.widthAnchor.constraint(equalTo: clicksBar.widthAnchor),
-            clicksBar.widthAnchor.constraint(equalTo: scrollBar.widthAnchor)
-        ])
-        NSLayoutConstraint.activate([
-            iconView.widthAnchor.constraint(equalToConstant: AppStatsLayout.appIconSize),
-            iconView.heightAnchor.constraint(equalToConstant: AppStatsLayout.appIconSize)
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 28),
+            iconView.heightAnchor.constraint(equalToConstant: 28),
+            nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: detailButton.leadingAnchor, constant: -8),
+            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            detailButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            detailButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            detailButton.widthAnchor.constraint(equalToConstant: 28),
+            detailButton.heightAnchor.constraint(equalToConstant: 32)
         ])
     }
 
-    func update(
-        name: String,
-        icon: NSImage?,
-        keys: Double, clicks: Double, scroll: Double,
-        maxKeys: Double, maxClicks: Double, maxScroll: Double,
-        keysFormatted: String, clicksFormatted: String, scrollFormatted: String
-    ) {
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private var actionHandler: (() -> Void)?
+
+    func configure(name: String, icon: NSImage, action: @escaping () -> Void) {
+        nameLabel.stringValue = name
+        nameLabel.toolTip = name
         iconView.image = icon
-        nameButton.title = name
-        let help = String(format: NSLocalizedString("appStats.breakdown.open", comment: ""), name)
-        nameButton.toolTip = help
-        nameButton.setAccessibilityLabel(help)
-        disclosureButton.toolTip = help
-        disclosureButton.setAccessibilityLabel(help)
-        keysBar.update(value: keys, maxValue: maxKeys, formatted: keysFormatted)
-        clicksBar.update(value: clicks, maxValue: maxClicks, formatted: clicksFormatted)
-        scrollBar.update(value: scroll, maxValue: maxScroll, formatted: scrollFormatted)
+        actionHandler = action
+        let label = String(format: NSLocalizedString("appStats.breakdown.open", comment: ""), name)
+        detailButton.toolTip = label
+        detailButton.setAccessibilityLabel(label)
     }
 
-    @objc private func openBreakdown() {
-        onOpenBreakdown?()
-    }
-
-    func animateBars(delay: TimeInterval) {
-        keysBar.animateIn(delay: delay)
-        clicksBar.animateIn(delay: delay + 0.05)
-        scrollBar.animateIn(delay: delay + 0.1)
-    }
-
-    func applyAlternatingBackground(isEvenRow: Bool) {
-        wantsLayer = true
-        let colors = NSColor.controlAlternatingRowBackgroundColors
-        let index = isEvenRow ? 0 : 1
-        let fallback = isEvenRow ? NSColor.windowBackgroundColor : NSColor.controlBackgroundColor
-        let color = colors.count > index ? colors[index] : fallback
-        layer?.backgroundColor = resolvedCGColor(color, for: self)
-        layer?.cornerRadius = isEvenRow ? 0 : AppStatsLayout.rowCornerRadius
-    }
-}
-
-private func resolvedCGColor(_ color: NSColor, for view: NSView) -> CGColor {
-    var resolved: CGColor = color.cgColor
-    view.effectiveAppearance.performAsCurrentDrawingAppearance {
-        resolved = color.cgColor
-    }
-    return resolved
-}
-
-private func resolvedColor(_ color: NSColor, for view: NSView) -> NSColor {
-    let cgColor = resolvedCGColor(color, for: view)
-    return NSColor(cgColor: cgColor) ?? color
-}
-
-private final class SingleBarView: NSView {
-    private var barLayer: CALayer!
-    private var valueLabel: NSTextField!
-    private var value: Double = 0
-    private var maxValue: Double = 1
-    private var formattedValue: String = ""
-    private var targetBarWidth: CGFloat = 0
-    private let labelPadding: CGFloat = 4
-    private let animationDuration: TimeInterval = 0.35
-    private var isAnimating = false
-    private var animationToken = UUID()
-
-    init(color: NSColor) {
-        super.init(frame: .zero)
-        setupUI(color: color)
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setupUI(color: .systemBlue)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func setupUI(color: NSColor) {
-        wantsLayer = true
-        layer?.masksToBounds = false
-
-        barLayer = CALayer()
-        barLayer.backgroundColor = color.cgColor
-        barLayer.cornerRadius = AppStatsLayout.barCornerRadius
-        barLayer.anchorPoint = CGPoint(x: 0, y: 0.5)
-        layer?.addSublayer(barLayer)
-
-        valueLabel = NSTextField(labelWithString: "")
-        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
-        valueLabel.textColor = .secondaryLabelColor
-        valueLabel.alignment = .right
-        valueLabel.backgroundColor = .clear
-        valueLabel.drawsBackground = false
-        valueLabel.isBezeled = false
-        valueLabel.isEditable = false
-        addSubview(valueLabel)
-    }
-
-    override func layout() {
-        super.layout()
-        recalculateBarWidth()
-        updateBarPosition(animated: false)
-        updateLabelPosition()
-    }
-
-    func update(value: Double, maxValue: Double, formatted: String) {
-        self.value = value
-        self.maxValue = max(1, maxValue)
-        self.formattedValue = formatted
-        valueLabel.stringValue = formatted
-        recalculateBarWidth()
-    }
-
-    private func recalculateBarWidth() {
-        targetBarWidth = bounds.width * CGFloat(value / maxValue)
-    }
-
-    func animateIn(delay: TimeInterval = 0) {
-        targetBarWidth = bounds.width * CGFloat(value / maxValue)
-        isAnimating = true
-        let token = UUID()
-        animationToken = token
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        barLayer.frame = CGRect(x: 0, y: (bounds.height - AppStatsLayout.barHeight) / 2, width: 0, height: AppStatsLayout.barHeight)
-        CATransaction.commit()
-
-        let animation = CABasicAnimation(keyPath: "bounds.size.width")
-        animation.fromValue = 0
-        animation.toValue = targetBarWidth
-        animation.duration = animationDuration
-        animation.beginTime = CACurrentMediaTime() + delay
-        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        animation.fillMode = .forwards
-        animation.isRemovedOnCompletion = false
-        barLayer.add(animation, forKey: "widthAnimation")
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        barLayer.bounds.size.width = targetBarWidth
-        CATransaction.commit()
-
-        updateLabelPosition()
-
-        let totalDelay = delay + animationDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + totalDelay) { [weak self] in
-            guard let self = self, self.animationToken == token else { return }
-            self.isAnimating = false
-            self.barLayer.removeAnimation(forKey: "widthAnimation")
-            self.updateBarPosition(animated: false)
-            self.updateLabelPosition()
-        }
-    }
-
-    private func updateBarPosition(animated: Bool) {
-        if !isAnimating {
-            barLayer.removeAnimation(forKey: "widthAnimation")
-        }
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(!animated)
-        barLayer.frame = CGRect(x: 0, y: (bounds.height - AppStatsLayout.barHeight) / 2, width: targetBarWidth, height: AppStatsLayout.barHeight)
-        CATransaction.commit()
-    }
-
-    private func updateLabelPosition() {
-        valueLabel.sizeToFit()
-        let labelSize = valueLabel.frame.size
-        let labelY = (bounds.height - labelSize.height) / 2
-        let minWidthForLabel = labelSize.width + labelPadding * 2
-
-        if targetBarWidth >= minWidthForLabel {
-            // 显示在柱状图内部靠右
-            // 使用白色文字，系统颜色（systemBlue/systemPurple/systemOrange）会自动适配 dark mode
-            let labelX = targetBarWidth - labelSize.width - labelPadding
-            valueLabel.frame = CGRect(x: labelX, y: labelY, width: labelSize.width, height: labelSize.height)
-            valueLabel.textColor = .white
-        } else {
-            // 显示在柱状图右侧
-            let labelX = targetBarWidth + labelPadding
-            valueLabel.frame = CGRect(x: labelX, y: labelY, width: labelSize.width, height: labelSize.height)
-            valueLabel.textColor = .secondaryLabelColor
-        }
-    }
-}
-
-private final class AppStatsColumnDividerView: NSView {
-    override var mouseDownCanMoveWindow: Bool {
-        return false
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        let inset = AppStatsLayout.dividerVerticalInset
-        let lineHeight = max(0, bounds.height - (inset * 2))
-        let lineRect = NSRect(
-            x: (bounds.width - AppStatsLayout.dividerThickness) / 2,
-            y: inset,
-            width: AppStatsLayout.dividerThickness,
-            height: lineHeight
-        )
-        NSColor.separatorColor.setFill()
-        lineRect.fill()
-    }
+    @objc private func openDetails() { actionHandler?() }
 }
