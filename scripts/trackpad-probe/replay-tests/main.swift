@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-// Compile with Keytide/TrackpadStudioView.swift. No App, device, Keychain or
+// Compile with KeytideHelper/TrackpadRecording.swift. No App, device, Keychain or
 // user history is opened. Temporary encrypted synthetic records are removed.
 let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

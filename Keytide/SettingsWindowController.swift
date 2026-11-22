@@ -1,10 +1,14 @@
 import Cocoa
 
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: ReclaimingWindowController {
     static let shared = SettingsWindowController()
+    private var lastPage = 0
 
-    private init() {
+    private init() { super.init(window: nil) }
+
+    override func makeWindow() -> NSWindow {
         let viewController = SettingsViewController()
+        viewController.restorePage(lastPage)
         let window = NSWindow(contentViewController: viewController)
         window.styleMask = [.titled, .closable]
         window.title = NSLocalizedString("settings.windowTitle", comment: "")
@@ -16,17 +20,23 @@ final class SettingsWindowController: NSWindowController {
         window.backgroundColor = .windowBackgroundColor
         window.setContentSize(NSSize(width: 840, height: 650))
         window.contentMinSize = NSSize(width: 800, height: 600)
-        window.isReleasedWhenClosed = false
-        window.center()
-        super.init(window: window)
+        return window
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func preservePresentation() {
+        lastPage = (contentViewController as? SettingsViewController)?.selectedPage ?? 0
+    }
+
+    override var canReleaseWindow: Bool {
+        (contentViewController as? SettingsViewController)?.fileTransferInProgress != true
+    }
+
     func show() {
-        guard let window = window else { return }
+        let window = windowForPresentation()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()

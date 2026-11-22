@@ -60,5 +60,9 @@ extension StatsManager.Environment {
 }
 
 extension StatsManager {
-    static let shared = StatsManager(environment: .live)
+    static let shared = StatsManager(
+        environment: .live,
+        ownsCaptureStore: false,
+        usesDynamicMenuBarIconColor: false
+    )
 }

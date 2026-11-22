@@ -38,7 +38,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     private var pages: [[NSView]] = []
     private let pageKeys = ["general", "appearance", "notifications", "data"]
     private let pageSymbols = ["gearshape", "menubar.rectangle", "bell", "externaldrive"]
-    private var selectedPage = 0
+    private(set) var selectedPage = 0
 
     private var scrollView: NSScrollView!
     private var documentView: NSView!
@@ -49,31 +49,22 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     private var headerSubtitleLabel: NSTextField!
     private var githubButton: NSButton!
 
-    private var menuBarLayoutPopUp: NSPopUpButton!
     private var menuBarNumbersPopUp: NSPopUpButton!
     private var menuBarPreview: MenuBarStatusView!
     private var menuBarPreviewWidth: NSLayoutConstraint!
     private var menuUIStylePopUp: NSPopUpButton!
-    private var showKeyPressesButton: NSSwitch!
-    private var showMouseClicksButton: NSSwitch!
-    private var minimalMenuBarModeButton: NSSwitch!
     private var appStatsEnabledButton: NSSwitch!
     private var replayRecordingButton: NSSwitch!
     private var replayStatusLabel: NSTextField!
     private var replayObserver: NSObjectProtocol?
+    private var trackpadRecordingButton: NSSwitch!
+    private var trackpadRecordingStatus: NSTextField!
+    private var deleteTrackpadButton: NSButton!
+    private var trackpadObserver: NSObjectProtocol?
     private var launchAtLoginButton: NSSwitch!
-    private var dynamicIconColorButton: NSSwitch!
-    private var dynamicIconColorStylePopUp: NSPopUpButton!
-    private var dynamicIconColorStyleRow: NSStackView!
-    private var dynamicIconColorWindowField: NSTextField!
-    private var dynamicIconColorWindowRow: NSStackView!
-    private var dynamicIconColorHelpButton: NSButton!
-    private lazy var dynamicIconColorHelpPopover: NSPopover = makeDynamicIconColorHelpPopover()
-    private weak var dynamicIconColorHelpContentView: NSView?
-    private var helpButtonTrackingArea: NSTrackingArea?
-    private var helpPopoverTrackingArea: NSTrackingArea?
-    private var isHoveringHelpButton = false
-    private var isHoveringHelpPopover = false
+    private var backgroundInputButton: NSSwitch!
+    private var backgroundInputStatus: NSTextField!
+    private var backgroundInputObserver: NSObjectProtocol?
     private var resetButton: NSButton!
     private var importButton: NSButton!
     private var exportButton: NSButton!
@@ -84,22 +75,22 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     private var keyPressThresholdStepper: NSStepper!
     private var clickThresholdField: NSTextField!
     private var clickThresholdStepper: NSStepper!
-    private var dynamicIconOptionsContainer: NSStackView!
     private var notificationThresholdContainer: NSStackView!
 
     private var cardViews: [NSView] = []
     private var dividerViews: [NSView] = []
     private var optionDividerViews: [NSView] = []
     private let fileTransferQueue = DispatchQueue(label: "Keytide.SettingsFileTransfers", qos: .userInitiated)
-    private var fileTransferInProgress = false
+    private(set) var fileTransferInProgress = false
     private var appearanceObservation: NSKeyValueObservation?
+
+    func restorePage(_ page: Int) { selectedPage = page }
     private var systemThemeObserver: NSObjectProtocol?
     private var appDidBecomeActiveObserver: NSObjectProtocol?
 
     private let thresholdMinimum = 0
     private let thresholdMaximum = 1_000_000
     private let thresholdStep = 100.0
-    private let dynamicIconColorStyleKey = "dynamicIconColorStyle"
     private let githubRepositoryURL = URL(string: "https://github.com/Xuan-lprk/KeyTide")
     private static var cachedGitHubIconImage: NSImage?
 
@@ -109,15 +100,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         formatter.allowsFloats = false
         formatter.minimum = NSNumber(value: thresholdMinimum)
         formatter.maximum = NSNumber(value: thresholdMaximum)
-        return formatter
-    }()
-
-    private lazy var windowFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .none
-        formatter.allowsFloats = false
-        formatter.minimum = NSNumber(value: 1)
-        formatter.maximum = NSNumber(value: 3600)
         return formatter
     }()
 
@@ -148,6 +130,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         replayObserver = NotificationCenter.default.addObserver(forName: .keyReplayRecordingChanged, object: nil, queue: .main) { [weak self] _ in
             self?.updateReplayState()
         }
+        trackpadObserver = NotificationCenter.default.addObserver(forName: TrackpadAppService.didChange,
+            object: TrackpadAppService.shared, queue: .main) { [weak self] _ in self?.updateTrackpadRecordingState() }
+        backgroundInputObserver = NotificationCenter.default.addObserver(forName: BackgroundInputController.didChange,
+            object: nil, queue: .main) { [weak self] _ in self?.updateBackgroundInputState() }
         updateAppearance()
         appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             DispatchQueue.main.async {
@@ -188,14 +174,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         }
     }
 
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        updateHelpButtonTrackingArea()
-        updateHelpPopoverTrackingArea()
-    }
-
     deinit {
+        if let backgroundInputObserver { NotificationCenter.default.removeObserver(backgroundInputObserver) }
         if let replayObserver { NotificationCenter.default.removeObserver(replayObserver) }
+        if let trackpadObserver { NotificationCenter.default.removeObserver(trackpadObserver) }
         appearanceObservation = nil
         if let observer = systemThemeObserver {
             DistributedNotificationCenter.default().removeObserver(observer)
@@ -209,6 +191,8 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     // MARK: - UI
 
     private func setupUI() {
+        // AppKit can select the first row while reloading the navigation table.
+        let initialPage = selectedPage
         let sidebar = NSVisualEffectView()
         sidebar.material = .sidebar
         sidebar.blendingMode = .withinWindow
@@ -342,22 +326,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         addArrangedSubviewFillingWidth(headerStack, to: contentStack)
         contentStack.setCustomSpacing(20, after: headerStack)
 
-        showKeyPressesButton = makeSwitch(action: #selector(toggleShowKeyPresses))
-        showMouseClicksButton = makeSwitch(action: #selector(toggleShowMouseClicks))
-        minimalMenuBarModeButton = makeSwitch(action: #selector(toggleMinimalMenuBarMode))
         appStatsEnabledButton = makeSwitch(action: #selector(toggleAppStatsEnabled))
         launchAtLoginButton = makeSwitch(action: #selector(toggleLaunchAtLogin))
+        backgroundInputButton = makeSwitch(action: #selector(toggleBackgroundInput))
         showThresholdsButton = makeSwitch(action: #selector(toggleShowThresholds))
-        dynamicIconColorButton = makeSwitch(action: #selector(toggleDynamicIconColor))
-
-        dynamicIconColorHelpButton = NSButton()
-        dynamicIconColorHelpButton.bezelStyle = .helpButton
-        dynamicIconColorHelpButton.title = ""
-        dynamicIconColorHelpButton.controlSize = .mini
-        dynamicIconColorHelpButton.translatesAutoresizingMaskIntoConstraints = false
-        dynamicIconColorHelpButton.widthAnchor.constraint(equalToConstant: 14).isActive = true
-        dynamicIconColorHelpButton.heightAnchor.constraint(equalToConstant: 14).isActive = true
-
         menuUIStylePopUp = NSPopUpButton()
         menuUIStylePopUp.addItems(withTitles: [
             NSLocalizedString("settings.uiStyle.standard", comment: ""),
@@ -366,15 +338,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         menuUIStylePopUp.target = self
         menuUIStylePopUp.action = #selector(changeMenuUIStyle)
         menuUIStylePopUp.setAccessibilityLabel(NSLocalizedString("settings.uiStyle", comment: ""))
-        menuBarLayoutPopUp = NSPopUpButton()
-        menuBarLayoutPopUp.addItems(withTitles: [NSLocalizedString("settings.menuDisplay.stacked", comment: ""), NSLocalizedString("settings.menuDisplay.single", comment: "")])
         menuBarNumbersPopUp = NSPopUpButton()
         menuBarNumbersPopUp.addItems(withTitles: [NSLocalizedString("settings.menuDisplay.compact", comment: ""), NSLocalizedString("settings.menuDisplay.full", comment: "")])
-        for control in [menuBarLayoutPopUp!, menuBarNumbersPopUp!] {
-            control.target = self
-            control.action = #selector(changeMenuBarDisplay)
-        }
-        menuBarLayoutPopUp.setAccessibilityLabel(NSLocalizedString("settings.menuDisplay.layout", comment: ""))
+        menuBarNumbersPopUp.target = self
+        menuBarNumbersPopUp.action = #selector(changeMenuBarDisplay)
         menuBarNumbersPopUp.setAccessibilityLabel(NSLocalizedString("settings.menuDisplay.numbers", comment: ""))
         menuBarPreview = MenuBarStatusView()
         menuBarPreview.translatesAutoresizingMaskIntoConstraints = false
@@ -386,54 +353,11 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
 
         let menuBarStack = makeOptionSeparatedStack([
             makeLabeledRow(title: NSLocalizedString("settings.uiStyle", comment: ""), control: menuUIStylePopUp),
-            makeSwitchRow(titleKey: "setting.showKeyPresses", toggle: showKeyPressesButton),
-            makeSwitchRow(titleKey: "setting.showMouseClicks", toggle: showMouseClicksButton),
-            makeSwitchRow(titleKey: "setting.minimalMenuBarMode", toggle: minimalMenuBarModeButton),
-            makeLabeledRow(title: NSLocalizedString("settings.menuDisplay.layout", comment: ""), control: menuBarLayoutPopUp),
             makeLabeledRow(title: NSLocalizedString("settings.menuDisplay.numbers", comment: ""), control: menuBarNumbersPopUp),
             makeLabeledRow(title: NSLocalizedString("settings.menuDisplay.preview", comment: ""), control: menuBarPreview)
         ])
 
         let menuBarSection = makeSection(titleKey: "settings.section.menuBar", content: menuBarStack)
-
-        let dynamicIconRow = makeSwitchRow(titleKey: "settings.dynamicIconColor",
-                                           toggle: dynamicIconColorButton,
-                                           accessory: dynamicIconColorHelpButton)
-
-        dynamicIconColorStylePopUp = NSPopUpButton()
-        dynamicIconColorStylePopUp.controlSize = .small
-        dynamicIconColorStylePopUp.font = NSFont.systemFont(ofSize: 12)
-        let iconStyleTitle = NSLocalizedString("settings.dynamicIconColorStyle.icon", comment: "")
-        let dotStyleTitle = NSLocalizedString("settings.dynamicIconColorStyle.dot", comment: "")
-        dynamicIconColorStylePopUp.addItems(withTitles: [iconStyleTitle, dotStyleTitle])
-        dynamicIconColorStylePopUp.item(at: 0)?.representedObject = DynamicIconColorStyle.icon.rawValue
-        dynamicIconColorStylePopUp.item(at: 1)?.representedObject = DynamicIconColorStyle.dot.rawValue
-        dynamicIconColorStylePopUp.target = self
-        dynamicIconColorStylePopUp.action = #selector(dynamicIconColorStyleChanged)
-
-        let styleRow = makeLabeledRow(title: NSLocalizedString("settings.dynamicIconColorStyle", comment: ""),
-                                      control: dynamicIconColorStylePopUp)
-        dynamicIconColorStyleRow = styleRow
-
-        dynamicIconColorWindowField = NSTextField()
-        dynamicIconColorWindowField.controlSize = .small
-        dynamicIconColorWindowField.font = NSFont.systemFont(ofSize: 12)
-        dynamicIconColorWindowField.formatter = windowFormatter
-        dynamicIconColorWindowField.target = self
-        dynamicIconColorWindowField.action = #selector(dynamicIconColorWindowChanged)
-        dynamicIconColorWindowField.delegate = self
-        dynamicIconColorWindowField.translatesAutoresizingMaskIntoConstraints = false
-        dynamicIconColorWindowField.widthAnchor.constraint(equalToConstant: 56).isActive = true
-
-        let windowRow = makeLabeledRow(title: NSLocalizedString("settings.dynamicIconColorWindow", comment: ""),
-                                       control: dynamicIconColorWindowField)
-        dynamicIconColorWindowRow = windowRow
-
-        let dynamicSubStack = makeOptionSeparatedStack([
-            dynamicIconColorStyleRow,
-            dynamicIconColorWindowRow
-        ], spacing: 6)
-        let dynamicIndentedStack = makeIndentedContainer(dynamicSubStack, indent: 22)
 
         let trackingStack = makeVerticalStack(spacing: 8)
         let appStatsRow = makeSwitchRow(titleKey: "setting.appStatsEnabled", toggle: appStatsEnabledButton)
@@ -441,18 +365,25 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         addArrangedSubviewFillingWidth(appStatsRow, to: trackingStack)
         addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: trackingStack)
         addArrangedSubviewFillingWidth(launchRow, to: trackingStack)
+        let loginHelp = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.appLogin.help", comment: ""))
+        loginHelp.font = .systemFont(ofSize: 11)
+        loginHelp.textColor = .secondaryLabelColor
+        addArrangedSubviewFillingWidth(loginHelp, to: trackingStack)
+        addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: trackingStack)
+        let backgroundRow = makeSwitchRow(titleKey: "backgroundInput.title", toggle: backgroundInputButton)
+        addArrangedSubviewFillingWidth(backgroundRow, to: trackingStack)
+        let backgroundHelp = NSTextField(wrappingLabelWithString: NSLocalizedString("backgroundInput.help", comment: ""))
+        backgroundHelp.font = .systemFont(ofSize: 11)
+        backgroundHelp.textColor = .secondaryLabelColor
+        addArrangedSubviewFillingWidth(backgroundHelp, to: trackingStack)
+        backgroundInputStatus = NSTextField(wrappingLabelWithString: "")
+        backgroundInputStatus.font = .systemFont(ofSize: 11)
+        backgroundInputStatus.textColor = .secondaryLabelColor
+        addArrangedSubviewFillingWidth(backgroundInputStatus, to: trackingStack)
         addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: trackingStack)
         let welcomeButton = NSButton(title: NSLocalizedString("welcome.reopen", comment: ""), target: self, action: #selector(reopenWelcome))
         welcomeButton.bezelStyle = .rounded
         trackingStack.addArrangedSubview(welcomeButton)
-
-        dynamicIconOptionsContainer = makeVerticalStack(spacing: 6)
-        addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: dynamicIconOptionsContainer)
-        addArrangedSubviewFillingWidth(dynamicIndentedStack, to: dynamicIconOptionsContainer)
-        let inputFeedback = makeVerticalStack(spacing: 8)
-        addArrangedSubviewFillingWidth(dynamicIconRow, to: inputFeedback)
-        addArrangedSubviewFillingWidth(dynamicIconOptionsContainer, to: inputFeedback)
-        let feedbackSection = makeSection(titleKey: "settings.section.feedback", content: inputFeedback)
 
         let trackingSection = makeSection(titleKey: "settings.section.tracking", content: trackingStack)
 
@@ -542,10 +473,27 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         replayOptions.addArrangedSubview(deleteReplay)
         let replaySection = makeSection(titleKey: "replay.recording.title", content: replayOptions)
         updateReplayState()
-        pages = [[trackingSection], [menuBarSection, feedbackSection], [notificationSection], [actionSection, replaySection, resetSection]]
+
+        trackpadRecordingButton = makeSwitch(action: #selector(toggleTrackpadRecording))
+        trackpadRecordingStatus = NSTextField(wrappingLabelWithString: "")
+        let trackpadHelp = NSTextField(wrappingLabelWithString: NSLocalizedString("trackpad.record.help", comment: ""))
+        let trackpadOptions = makeVerticalStack(spacing: 10)
+        addArrangedSubviewFillingWidth(makeSwitchRow(titleKey: "trackpad.record.always", toggle: trackpadRecordingButton), to: trackpadOptions)
+        for label in [trackpadHelp, trackpadRecordingStatus!] {
+            label.font = .systemFont(ofSize: 11)
+            label.textColor = .secondaryLabelColor
+            addArrangedSubviewFillingWidth(label, to: trackpadOptions)
+        }
+        deleteTrackpadButton = NSButton(title: NSLocalizedString("trackpad.delete", comment: ""), target: self, action: #selector(deleteTrackpadRecords))
+        deleteTrackpadButton.bezelStyle = .rounded
+        trackpadOptions.addArrangedSubview(deleteTrackpadButton)
+        let trackpadSection = makeSection(titleKey: "trackpad.title", content: trackpadOptions)
+        updateTrackpadRecordingState()
+        pages = [[trackingSection], [menuBarSection], [notificationSection],
+                 [actionSection, replaySection, trackpadSection, resetSection]]
         navigation.reloadData()
-        navigation.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-        showPage(0)
+        navigation.selectRowIndexes(IndexSet(integer: initialPage), byExtendingSelection: false)
+        showPage(initialPage)
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -567,7 +515,47 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
 
     private func updateReplayState() {
         replayRecordingButton?.state = KeyReplayRecording.shared.isEnabled ? .on : .off
+        replayRecordingButton?.isEnabled = !KeyReplayRecording.shared.changing
         replayStatusLabel?.stringValue = NSLocalizedString(KeyReplayRecording.shared.statusKey, comment: "")
+    }
+
+    private func updateTrackpadRecordingState() {
+        let service = TrackpadAppService.shared
+        trackpadRecordingButton?.state = service.recording ? .on : .off
+        trackpadRecordingButton?.isEnabled = service.canChangeRecording
+        deleteTrackpadButton?.isEnabled = service.canChangeRecording
+        trackpadRecordingStatus?.stringValue = NSLocalizedString(service.recordingStatusKey, comment: "")
+    }
+
+    @objc private func toggleTrackpadRecording() {
+        let enable = trackpadRecordingButton.state == .on
+        if enable {
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString("trackpad.record", comment: "")
+            alert.informativeText = NSLocalizedString("trackpad.consent", comment: "")
+            alert.addButton(withTitle: NSLocalizedString("replay.consent.enable", comment: ""))
+            alert.addButton(withTitle: NSLocalizedString("button.cancel", comment: ""))
+            guard alert.runModal() == .alertFirstButtonReturn else { updateTrackpadRecordingState(); return }
+        }
+        TrackpadAppService.shared.setRecording(enable) { [weak self] _ in
+            self?.updateTrackpadRecordingState()
+        }
+    }
+
+    @objc private func deleteTrackpadRecords() {
+        guard TrackpadAppService.shared.canChangeRecording else { return }
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("trackpad.delete.confirm", comment: "")
+        alert.informativeText = NSLocalizedString("trackpad.delete.help", comment: "")
+        alert.addButton(withTitle: NSLocalizedString("trackpad.delete", comment: ""))
+        alert.addButton(withTitle: NSLocalizedString("button.cancel", comment: ""))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        TrackpadAppService.shared.deleteAll { ok in
+            guard !ok else { return }
+            let failure = NSAlert()
+            failure.messageText = NSLocalizedString("replay.delete.failed", comment: "")
+            failure.runModal()
+        }
     }
 
     @objc private func toggleReplayRecording() {
@@ -926,203 +914,32 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     }
 
     @objc private func changeMenuBarDisplay() {
-        UserDefaults.standard.set(menuBarLayoutPopUp.indexOfSelectedItem == 1, forKey: MenuBarDisplayPreferences.singleLineKey)
         UserDefaults.standard.set(menuBarNumbersPopUp.indexOfSelectedItem == 1, forKey: MenuBarDisplayPreferences.fullNumbersKey)
         updateMenuBarPreview()
         StatsManager.shared.menuBarUpdateHandler?()
     }
 
     private func updateMenuBarPreview() {
-        let single = UserDefaults.standard.bool(forKey: MenuBarDisplayPreferences.singleLineKey)
         let full = UserDefaults.standard.bool(forKey: MenuBarDisplayPreferences.fullNumbersKey)
-        menuBarLayoutPopUp.selectItem(at: single ? 1 : 0)
         menuBarNumbersPopUp.selectItem(at: full ? 1 : 0)
-        menuBarPreview.configure(singleLine: single, fullNumbers: full)
-        menuBarPreview.update(keysText: StatsManager.shared.showKeyPressesInMenuBar ? MenuBarDisplayPreferences.number(12856, full: full) : "",
-                              clicksText: StatsManager.shared.showMouseClicksInMenuBar ? MenuBarDisplayPreferences.number(3210, full: full) : "")
-        menuBarPreview.updateIconColor(nil, style: .icon, isMinimalMode: StatsManager.shared.minimalMenuBarMode, showsColorDot: false)
+        menuBarPreview.update(.init(
+            keysText: MenuBarDisplayPreferences.number(12856, full: full),
+            clicksText: MenuBarDisplayPreferences.number(3210, full: full),
+            fullNumbers: full
+        ))
         menuBarPreviewWidth.constant = menuBarPreview.intrinsicContentSize.width
     }
 
     private func updateState() {
         updateMenuBarPreview()
         menuUIStylePopUp.selectItem(at: MenuUIStyle.allCases.firstIndex(of: MenuUIStyle.current) ?? 0)
-        showKeyPressesButton.state = StatsManager.shared.showKeyPressesInMenuBar ? .on : .off
-        showMouseClicksButton.state = StatsManager.shared.showMouseClicksInMenuBar ? .on : .off
-        minimalMenuBarModeButton.state = StatsManager.shared.minimalMenuBarMode ? .on : .off
         appStatsEnabledButton.state = StatsManager.shared.appStatsEnabled ? .on : .off
         launchAtLoginButton.state = LaunchAtLoginManager.shared.isEnabled ? .on : .off
-        dynamicIconColorButton.state = StatsManager.shared.enableDynamicIconColor ? .on : .off
-        updateDynamicIconColorStyleSelection()
+        updateBackgroundInputState()
         let notificationsEnabled = StatsManager.shared.notificationsEnabled
         showThresholdsButton.state = notificationsEnabled ? .on : .off
         notificationThresholdContainer.isHidden = !notificationsEnabled
         updateThresholdUI()
-    }
-
-    private func updateDynamicIconColorStyleSelection() {
-        let isMinimalMode = StatsManager.shared.minimalMenuBarMode
-        if isMinimalMode {
-            UserDefaults.standard.set(DynamicIconColorStyle.dot.rawValue, forKey: dynamicIconColorStyleKey)
-        }
-        let styleValue = UserDefaults.standard.string(forKey: dynamicIconColorStyleKey) ?? DynamicIconColorStyle.icon.rawValue
-        let style = DynamicIconColorStyle(rawValue: styleValue) ?? .icon
-        if let item = dynamicIconColorStylePopUp.itemArray.first(where: { ($0.representedObject as? String) == style.rawValue }) {
-            dynamicIconColorStylePopUp.select(item)
-        }
-        let isEnabled = StatsManager.shared.enableDynamicIconColor
-        dynamicIconColorStylePopUp.isEnabled = isEnabled && !isMinimalMode
-        dynamicIconColorStyleRow.isHidden = false
-        dynamicIconColorWindowRow.isHidden = false
-        dynamicIconOptionsContainer.isHidden = !isEnabled
-        dynamicIconColorWindowField.doubleValue = StatsManager.shared.dynamicIconColorWindow
-    }
-
-    private func makeDynamicIconColorHelpPopover() -> NSPopover {
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentSize = NSSize(width: 420, height: 520)
-        popover.contentViewController = makeDynamicIconColorHelpViewController()
-        return popover
-    }
-
-    private func makeDynamicIconColorHelpViewController() -> NSViewController {
-        let viewController = NSViewController()
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        viewController.view = container
-        dynamicIconColorHelpContentView = container
-        updateHelpPopoverTrackingArea()
-
-        let titleLabel = NSTextField(labelWithString: NSLocalizedString("settings.dynamicIconColorHelp.title", comment: ""))
-        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let bodyLabel = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.dynamicIconColorHelp.body", comment: ""))
-        bodyLabel.font = NSFont.systemFont(ofSize: 12)
-        bodyLabel.textColor = .secondaryLabelColor
-        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let imageGridStack = NSStackView()
-        imageGridStack.orientation = .vertical
-        imageGridStack.alignment = .centerX
-        imageGridStack.spacing = 8
-        imageGridStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let imageNames = [
-            "DynamicColorTip3",
-            "DynamicColorTip2",
-            "DynamicColorTip1",
-            "DynamicColorTip6",
-            "DynamicColorTip5",
-            "DynamicColorTip4"
-        ]
-        var currentRow: NSStackView?
-        for (index, name) in imageNames.enumerated() {
-            if index % 3 == 0 {
-                let row = NSStackView()
-                row.orientation = .horizontal
-                row.alignment = .centerY
-                row.spacing = 8
-                row.translatesAutoresizingMaskIntoConstraints = false
-                imageGridStack.addArrangedSubview(row)
-                currentRow = row
-            }
-            guard let image = NSImage(named: name) else { continue }
-            let imageView = NSImageView(image: image)
-            imageView.imageScaling = .scaleProportionallyDown
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            imageView.widthAnchor.constraint(equalToConstant: 64).isActive = true
-            imageView.heightAnchor.constraint(lessThanOrEqualToConstant: 44).isActive = true
-            currentRow?.addArrangedSubview(imageView)
-        }
-
-        let contentStack = NSStackView(views: [titleLabel, bodyLabel, imageGridStack])
-        contentStack.orientation = .vertical
-        contentStack.alignment = .leading
-        contentStack.spacing = 10
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(contentStack)
-
-        NSLayoutConstraint.activate([
-            contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-            contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
-            contentStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-            contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12)
-        ])
-
-        return viewController
-    }
-
-    private func updateHelpButtonTrackingArea() {
-        if let trackingArea = helpButtonTrackingArea {
-            dynamicIconColorHelpButton.removeTrackingArea(trackingArea)
-        }
-        let trackingArea = NSTrackingArea(
-            rect: dynamicIconColorHelpButton.bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: ["dynamicIconColorHelpButton": true]
-        )
-        dynamicIconColorHelpButton.addTrackingArea(trackingArea)
-        helpButtonTrackingArea = trackingArea
-    }
-
-    private func updateHelpPopoverTrackingArea() {
-        guard let container = dynamicIconColorHelpContentView else { return }
-        if let trackingArea = helpPopoverTrackingArea {
-            container.removeTrackingArea(trackingArea)
-        }
-        let trackingArea = NSTrackingArea(
-            rect: container.bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: ["dynamicIconColorHelpPopover": true]
-        )
-        container.addTrackingArea(trackingArea)
-        helpPopoverTrackingArea = trackingArea
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        if event.trackingArea?.userInfo?["dynamicIconColorHelpButton"] as? Bool == true {
-            isHoveringHelpButton = true
-            showDynamicIconColorHelpPopover()
-            return
-        }
-        if event.trackingArea?.userInfo?["dynamicIconColorHelpPopover"] as? Bool == true {
-            isHoveringHelpPopover = true
-            return
-        }
-        super.mouseEntered(with: event)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        if event.trackingArea?.userInfo?["dynamicIconColorHelpButton"] as? Bool == true {
-            isHoveringHelpButton = false
-            scheduleHelpPopoverCloseIfNeeded()
-            return
-        }
-        if event.trackingArea?.userInfo?["dynamicIconColorHelpPopover"] as? Bool == true {
-            isHoveringHelpPopover = false
-            scheduleHelpPopoverCloseIfNeeded()
-            return
-        }
-        super.mouseExited(with: event)
-    }
-
-    private func showDynamicIconColorHelpPopover() {
-        guard let button = dynamicIconColorHelpButton else { return }
-        if dynamicIconColorHelpPopover.isShown { return }
-        dynamicIconColorHelpPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
-    }
-
-    private func scheduleHelpPopoverCloseIfNeeded() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            guard let self = self else { return }
-            if !self.isHoveringHelpButton && !self.isHoveringHelpPopover {
-                self.dynamicIconColorHelpPopover.performClose(nil)
-            }
-        }
     }
 
     // MARK: - 通知阈值
@@ -1213,6 +1030,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
             clickThresholdField.stringValue = "\(clamped)"
             clickThresholdStepper.integerValue = clamped
         }
+        BackgroundInputController.shared.updateThresholdPreferences()
         requestNotificationPermissionIfNeeded()
     }
 
@@ -1231,11 +1049,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         applyThreshold(clickThresholdStepper.integerValue, for: .click)
     }
 
-    @objc private func dynamicIconColorWindowChanged(_ sender: NSTextField) {
-        let value = windowFormatter.number(from: sender.stringValue)?.doubleValue ?? 3.0
-        StatsManager.shared.dynamicIconColorWindow = value
-    }
-
     @objc private func thresholdFieldEdited(_ sender: NSTextField) {
         let value = thresholdFormatter.number(from: sender.stringValue)?.intValue ?? 0
         if sender == keyPressThresholdField {
@@ -1247,11 +1060,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
 
     func controlTextDidEndEditing(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
-        if field == dynamicIconColorWindowField {
-            dynamicIconColorWindowChanged(field)
-        } else {
-            thresholdFieldEdited(field)
-        }
+        thresholdFieldEdited(field)
     }
 
     // MARK: - Actions
@@ -1260,46 +1069,35 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         let enabled = showThresholdsButton.state == .on
         StatsManager.shared.notificationsEnabled = enabled
         notificationThresholdContainer.isHidden = !enabled
+        BackgroundInputController.shared.updateThresholdPreferences()
         if enabled {
             requestNotificationPermissionIfNeeded()
         }
     }
 
-    @objc private func toggleShowKeyPresses() {
-        StatsManager.shared.showKeyPressesInMenuBar = (showKeyPressesButton.state == .on)
-        updateMenuBarPreview()
-    }
-
-    @objc private func toggleShowMouseClicks() {
-        StatsManager.shared.showMouseClicksInMenuBar = (showMouseClicksButton.state == .on)
-        updateMenuBarPreview()
-    }
-
-    @objc private func toggleMinimalMenuBarMode() {
-        StatsManager.shared.minimalMenuBarMode = (minimalMenuBarModeButton.state == .on)
-        updateMenuBarPreview()
-        updateDynamicIconColorStyleSelection()
-    }
-
     @objc private func toggleAppStatsEnabled() {
-        StatsManager.shared.appStatsEnabled = (appStatsEnabledButton.state == .on)
+        let enabled = appStatsEnabledButton.state == .on
+        StatsManager.shared.appStatsEnabled = enabled
+        BackgroundInputController.shared.updateAttribution(enabled)
     }
 
-    @objc private func toggleDynamicIconColor() {
-        StatsManager.shared.enableDynamicIconColor = dynamicIconColorButton.state == .on
-        updateDynamicIconColorStyleSelection()
+    private func updateBackgroundInputState() {
+        let controller = BackgroundInputController.shared
+        backgroundInputButton?.state = controller.isEnabled ? .on : .off
+        let message = controller.statusMessage
+        backgroundInputStatus?.stringValue = message.map { NSLocalizedString($0, comment: "") } ?? ""
+        backgroundInputStatus?.isHidden = message == nil
     }
 
-    @objc private func dynamicIconColorStyleChanged() {
-        if StatsManager.shared.minimalMenuBarMode {
-            UserDefaults.standard.set(DynamicIconColorStyle.dot.rawValue, forKey: dynamicIconColorStyleKey)
-            updateDynamicIconColorStyleSelection()
-            StatsManager.shared.menuBarUpdateHandler?()
-            return
-        }
-        guard let rawValue = dynamicIconColorStylePopUp.selectedItem?.representedObject as? String else { return }
-        UserDefaults.standard.set(rawValue, forKey: dynamicIconColorStyleKey)
-        StatsManager.shared.menuBarUpdateHandler?()
+    @objc private func toggleBackgroundInput() {
+        BackgroundInputController.shared.setAllowed(backgroundInputButton.state == .on)
+    }
+
+    private func showHelperRequestError() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = NSLocalizedString("backgroundInput.error", comment: "")
+        alert.runModal()
     }
 
     @objc private func reopenWelcome() { AppDelegate.shared?.showOnboarding(restart: true) }
@@ -1338,8 +1136,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         alert.addButton(withTitle: NSLocalizedString("stats.reset.cancel", comment: ""))
 
         if alert.runModal() == .alertFirstButtonReturn {
-            StatsManager.shared.resetStats()
-            AppDelegate.trackEvent("stats_reset")
+            BackgroundInputController.shared.request(.resetStats) { [weak self] _, ok in
+                if ok { AppDelegate.trackEvent("stats_reset") }
+                else { self?.showHelperRequestError() }
+            }
         }
     }
 
@@ -1415,6 +1215,9 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         for button in [importButton, exportButton, resetButton] { button?.isEnabled = !inProgress }
         importButton.title = NSLocalizedString(inProgress && importing ? "import.inProgress" : "button.importData", comment: "")
         exportButton.title = NSLocalizedString(inProgress && !importing ? "export.inProgress" : "button.exportData", comment: "")
+        if !inProgress {
+            DispatchQueue.main.async { SettingsWindowController.shared.releaseClosedWindow() }
+        }
     }
 
     private func confirmAndImport(from url: URL) {
@@ -1497,15 +1300,23 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         guard !fileTransferInProgress else { return }
         setFileTransferInProgress(true, importing: true)
         fileTransferQueue.async { [weak self] in
-            let result = Result { try StatsManager.prepareStatsImport(from: Data(contentsOf: url)) }
+            let result = Result {
+                let raw = try Data(contentsOf: url)
+                _ = try StatsManager.prepareStatsImport(from: raw)
+                return raw
+            }
             DispatchQueue.main.async {
                 guard let self else { return }
                 switch result {
-                case .success(let prepared):
-                    StatsManager.shared.applyPreparedImport(prepared, mode: mode)
-                    self.setFileTransferInProgress(false)
-                    AppDelegate.trackEvent("stats_imported", properties: ["mode": mode == .overwrite ? "overwrite" : "merge"])
-                    self.showImportSuccess(mode: mode)
+                case .success(let raw):
+                    let command: InputControl = mode == .overwrite ? .overwriteStats : .mergeStats
+                    BackgroundInputController.shared.request(command, data: raw) { [weak self] _, ok in
+                        guard let self else { return }
+                        self.setFileTransferInProgress(false)
+                        guard ok else { self.showHelperRequestError(); return }
+                        AppDelegate.trackEvent("stats_imported", properties: ["mode": mode == .overwrite ? "overwrite" : "merge"])
+                        self.showImportSuccess(mode: mode)
+                    }
                 case .failure(let error):
                     self.setFileTransferInProgress(false)
                     self.showImportError(error)

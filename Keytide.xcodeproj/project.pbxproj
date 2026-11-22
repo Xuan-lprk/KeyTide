@@ -15,7 +15,6 @@
 		9A10000C /* RemoteEventProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A20000C /* RemoteEventProcessor.swift */; };
 		9A10000D /* HelperMigrationPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A20000D /* HelperMigrationPresenter.swift */; };
 		A1000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001 /* AppDelegate.swift */; };
-		A1000003 /* StatsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003 /* StatsManager.swift */; };
 		A1000004 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* MenuBarController.swift */; };
 		A1000005 /* StatsPopoverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005 /* StatsPopoverViewController.swift */; };
 		A1000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000006 /* Assets.xcassets */; };
@@ -30,8 +29,6 @@
 		A1000015 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000017 /* NotificationManager.swift */; };
 		A1000020 /* AllTimeStatsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* AllTimeStatsWindowController.swift */; };
 		A1000021 /* AllTimeStatsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000021 /* AllTimeStatsViewController.swift */; };
-		A1000022 /* AppStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000022 /* AppStats.swift */; };
-		A1000023 /* AppActivityTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000023 /* AppActivityTracker.swift */; };
 		A1000024 /* AppStatsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000024 /* AppStatsWindowController.swift */; };
 		A1000025 /* AppStatsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000025 /* AppStatsViewController.swift */; };
 		A1000026 /* ActivityHeatmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000026 /* ActivityHeatmapView.swift */; };
@@ -40,23 +37,15 @@
 		A1000029 /* UpdateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000029 /* UpdateManager.swift */; };
 		A1000030 /* KeyboardHeatmapWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000030 /* KeyboardHeatmapWindowController.swift */; };
 		A1000031 /* KeyboardHeatmapViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000031 /* KeyboardHeatmapViewController.swift */; };
-		A1000032 /* StatsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000032 /* StatsModels.swift */; };
 		A1000033 /* KPSDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000033 /* KPSDetailView.swift */; };
 		A1000034 /* UpdateCheckCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000034 /* UpdateCheckCoordinator.swift */; };
 		A1000035 /* AnalyticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000035 /* AnalyticsManager.swift */; };
 		A1000036 /* StatsManagerLiveEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000036 /* StatsManagerLiveEnvironment.swift */; };
-		B1000091 /* InteractionProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000091 /* InteractionProfile.swift */; };
 		B1000092 /* AppKeyBreakdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000092 /* AppKeyBreakdown.swift */; };
 		B1000093 /* AppDetailPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000093 /* AppDetailPresentation.swift */; };
 		B1000094 /* AppDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000094 /* AppDetailView.swift */; };
 		B1000095 /* KeyboardHeatmapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000095 /* KeyboardHeatmapView.swift */; };
 		B1000096 /* KeyboardHeatmapRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000096 /* KeyboardHeatmapRepresentable.swift */; };
-		B1000097 /* PhysicalKeyMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000097 /* PhysicalKeyMapping.swift */; };
-		B1000098 /* KeyboardLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000098 /* KeyboardLayout.swift */; };
-		B1000099 /* CumulativeKeyboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000099 /* CumulativeKeyboardSnapshot.swift */; };
-		B100009A /* KeyboardTrackingPeriod.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200009A /* KeyboardTrackingPeriod.swift */; };
-		B100009B /* KeyboardUsageProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200009B /* KeyboardUsageProgress.swift */; };
-		B10000A1 /* GrowthKeyboardPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000A1 /* GrowthKeyboardPresentation.swift */; };
 		B10000A2 /* GrowthPlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000A2 /* GrowthPlaybackState.swift */; };
 		B10000A3 /* EditorialKeyboardRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000A3 /* EditorialKeyboardRenderer.swift */; };
 		B10000A4 /* GrowthKeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000A4 /* GrowthKeyboardViewController.swift */; };
@@ -80,11 +69,11 @@
 		E10000P3 /* GeekTypingPulseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P3 /* GeekTypingPulseView.swift */; };
 		E10000P4 /* MenuUIStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P4 /* MenuUIStyle.swift */; };
 		E11000F1 /* Design/Keytide-Icon-v1/Keytide.icon in Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
+		E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Helper Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
 		F11000A1 /* ReleaseReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A1 /* ReleaseReadiness.swift */; };
 		F11000A2 /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A2 /* OnboardingWindowController.swift */; };
 		F11000A3 /* OnboardingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A3 /* OnboardingProgress.swift */; };
 		F11000A4 /* GrowthReplayPressSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A4 /* GrowthReplayPressSurface.swift */; };
-		F11000A5 /* KeyReplayStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A5 /* KeyReplayStore.swift */; };
 		F11000A6 /* KeyReplayRecording.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A6 /* KeyReplayRecording.swift */; };
 /* End PBXBuildFile section */
 
@@ -119,7 +108,6 @@
 		9A20000C /* RemoteEventProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteEventProcessor.swift; sourceTree = "<group>"; };
 		9A20000D /* HelperMigrationPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperMigrationPresenter.swift; sourceTree = "<group>"; };
 		A2000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		A2000003 /* StatsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsManager.swift; sourceTree = "<group>"; };
 		A2000004 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		A2000005 /* StatsPopoverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsPopoverViewController.swift; sourceTree = "<group>"; };
 		A2000006 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -136,8 +124,6 @@
 		A200001A /* Localizable.strings */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = "zh-Hant.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A2000020 /* AllTimeStatsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllTimeStatsWindowController.swift; sourceTree = "<group>"; };
 		A2000021 /* AllTimeStatsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllTimeStatsViewController.swift; sourceTree = "<group>"; };
-		A2000022 /* AppStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStats.swift; sourceTree = "<group>"; };
-		A2000023 /* AppActivityTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppActivityTracker.swift; sourceTree = "<group>"; };
 		A2000024 /* AppStatsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStatsWindowController.swift; sourceTree = "<group>"; };
 		A2000025 /* AppStatsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStatsViewController.swift; sourceTree = "<group>"; };
 		A2000026 /* ActivityHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityHeatmapView.swift; sourceTree = "<group>"; };
@@ -146,7 +132,6 @@
 		A2000029 /* UpdateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateManager.swift; sourceTree = "<group>"; };
 		A2000030 /* KeyboardHeatmapWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapWindowController.swift; sourceTree = "<group>"; };
 		A2000031 /* KeyboardHeatmapViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapViewController.swift; sourceTree = "<group>"; };
-		A2000032 /* StatsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsModels.swift; sourceTree = "<group>"; };
 		A2000033 /* KPSDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KPSDetailView.swift; sourceTree = "<group>"; };
 		A2000034 /* UpdateCheckCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckCoordinator.swift; sourceTree = "<group>"; };
 		A2000035 /* AnalyticsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsManager.swift; sourceTree = "<group>"; };
@@ -154,18 +139,11 @@
 		A3000001 /* Keytide.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keytide.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A3000003 /* Keytide.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Keytide.entitlements; sourceTree = "<group>"; };
-		B2000091 /* InteractionProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionProfile.swift; sourceTree = "<group>"; };
 		B2000092 /* AppKeyBreakdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppKeyBreakdown.swift; sourceTree = "<group>"; };
 		B2000093 /* AppDetailPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDetailPresentation.swift; sourceTree = "<group>"; };
 		B2000094 /* AppDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDetailView.swift; sourceTree = "<group>"; };
 		B2000095 /* KeyboardHeatmapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapView.swift; sourceTree = "<group>"; };
 		B2000096 /* KeyboardHeatmapRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapRepresentable.swift; sourceTree = "<group>"; };
-		B2000097 /* PhysicalKeyMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalKeyMapping.swift; sourceTree = "<group>"; };
-		B2000098 /* KeyboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
-		B2000099 /* CumulativeKeyboardSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CumulativeKeyboardSnapshot.swift; sourceTree = "<group>"; };
-		B200009A /* KeyboardTrackingPeriod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardTrackingPeriod.swift; sourceTree = "<group>"; };
-		B200009B /* KeyboardUsageProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardUsageProgress.swift; sourceTree = "<group>"; };
-		B20000A1 /* GrowthKeyboardPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrowthKeyboardPresentation.swift; sourceTree = "<group>"; };
 		B20000A2 /* GrowthPlaybackState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrowthPlaybackState.swift; sourceTree = "<group>"; };
 		B20000A3 /* EditorialKeyboardRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorialKeyboardRenderer.swift; sourceTree = "<group>"; };
 		B20000A4 /* GrowthKeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrowthKeyboardViewController.swift; sourceTree = "<group>"; };
@@ -193,7 +171,6 @@
 		F21000A2 /* OnboardingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowController.swift; sourceTree = "<group>"; };
 		F21000A3 /* OnboardingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingProgress.swift; sourceTree = "<group>"; };
 		F21000A4 /* GrowthReplayPressSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrowthReplayPressSurface.swift; sourceTree = "<group>"; };
-		F21000A5 /* KeyReplayStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyReplayStore.swift; sourceTree = "<group>"; };
 		F21000A6 /* KeyReplayRecording.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyReplayRecording.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -205,6 +182,21 @@
 				HelperPayloadFields.swift,
 				HelperProtocols.swift,
 				SystemMediaKey.swift,
+				TrackpadRecording.swift,
+				InputEventSemantics.swift,
+				KeyReplayStore.swift,
+				HelperKeyReplayWriter.swift,
+				AppStats.swift,
+				AppActivityTracker.swift,
+				StatsModels.swift,
+				StatsManager.swift,
+				InteractionProfile.swift,
+				PhysicalKeyMapping.swift,
+				KeyboardLayout.swift,
+				KeyboardTrackingPeriod.swift,
+				KeyboardUsageProgress.swift,
+				CumulativeKeyboardSnapshot.swift,
+				GrowthKeyboardPresentation.swift,
 			);
 			target = A6000001 /* Keytide */;
 		};
@@ -266,19 +258,10 @@
 				B20000A8 /* GrowthKeyboard3DScene.swift */,
 				B20000A7 /* GrowthKeyboard3DGeometry.swift */,
 				A2000035 /* AnalyticsManager.swift */,
-				A2000023 /* AppActivityTracker.swift */,
-				A2000003 /* StatsManager.swift */,
 				A2000036 /* StatsManagerLiveEnvironment.swift */,
-				A2000022 /* AppStats.swift */,
-				B2000091 /* InteractionProfile.swift */,
 				B2000093 /* AppDetailPresentation.swift */,
 				B2000095 /* KeyboardHeatmapView.swift */,
 				B2000096 /* KeyboardHeatmapRepresentable.swift */,
-				B2000097 /* PhysicalKeyMapping.swift */,
-				B2000098 /* KeyboardLayout.swift */,
-				B2000099 /* CumulativeKeyboardSnapshot.swift */,
-				B200009A /* KeyboardTrackingPeriod.swift */,
-				B200009B /* KeyboardUsageProgress.swift */,
 				B20000A5 /* KeyboardVisualizationViewController.swift */,
 				B20000AA /* KeyboardStudioTheme.swift */,
 				E20000F1 /* TrackpadStudioView.swift */,
@@ -286,12 +269,10 @@
 				B20000A4 /* GrowthKeyboardViewController.swift */,
 				B20000A3 /* EditorialKeyboardRenderer.swift */,
 				B20000A2 /* GrowthPlaybackState.swift */,
-				B20000A1 /* GrowthKeyboardPresentation.swift */,
 				B2000094 /* AppDetailView.swift */,
 				B2000092 /* AppKeyBreakdown.swift */,
 				9A20000A /* HelperSupervisor.swift */,
 				F21000A1 /* ReleaseReadiness.swift */,
-				F21000A5 /* KeyReplayStore.swift */,
 				F21000A6 /* KeyReplayRecording.swift */,
 				F21000A4 /* GrowthReplayPressSurface.swift */,
 				F21000A3 /* OnboardingProgress.swift */,
@@ -299,7 +280,6 @@
 				9A20000B /* HelperXPCClient.swift */,
 				9A20000C /* RemoteEventProcessor.swift */,
 				9A20000D /* HelperMigrationPresenter.swift */,
-				A2000032 /* StatsModels.swift */,
 				A2000004 /* MenuBarController.swift */,
 				A2000033 /* KPSDetailView.swift */,
 				A2000005 /* StatsPopoverViewController.swift */,
@@ -443,6 +423,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Helper Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -484,7 +465,6 @@
 				A1000035 /* AnalyticsManager.swift in Sources */,
 				9A10000A /* HelperSupervisor.swift in Sources */,
 				F11000A1 /* ReleaseReadiness.swift in Sources */,
-				F11000A5 /* KeyReplayStore.swift in Sources */,
 				F11000A6 /* KeyReplayRecording.swift in Sources */,
 				F11000A4 /* GrowthReplayPressSurface.swift in Sources */,
 				F11000A3 /* OnboardingProgress.swift in Sources */,
@@ -492,29 +472,18 @@
 				9A10000B /* HelperXPCClient.swift in Sources */,
 				9A10000C /* RemoteEventProcessor.swift in Sources */,
 				9A10000D /* HelperMigrationPresenter.swift in Sources */,
-				A1000023 /* AppActivityTracker.swift in Sources */,
-				A1000003 /* StatsManager.swift in Sources */,
 				A1000036 /* StatsManagerLiveEnvironment.swift in Sources */,
-				A1000022 /* AppStats.swift in Sources */,
-				B1000091 /* InteractionProfile.swift in Sources */,
 				B1000093 /* AppDetailPresentation.swift in Sources */,
 				B1000095 /* KeyboardHeatmapView.swift in Sources */,
 				B1000096 /* KeyboardHeatmapRepresentable.swift in Sources */,
-				B1000097 /* PhysicalKeyMapping.swift in Sources */,
-				B1000098 /* KeyboardLayout.swift in Sources */,
-				B1000099 /* CumulativeKeyboardSnapshot.swift in Sources */,
-				B100009A /* KeyboardTrackingPeriod.swift in Sources */,
-				B100009B /* KeyboardUsageProgress.swift in Sources */,
 				B10000A5 /* KeyboardVisualizationViewController.swift in Sources */,
 				B10000AA /* KeyboardStudioTheme.swift in Sources */,
 				E10000F1 /* TrackpadStudioView.swift in Sources */,
 				B10000A4 /* GrowthKeyboardViewController.swift in Sources */,
 				B10000A3 /* EditorialKeyboardRenderer.swift in Sources */,
 				B10000A2 /* GrowthPlaybackState.swift in Sources */,
-				B10000A1 /* GrowthKeyboardPresentation.swift in Sources */,
 				B1000094 /* AppDetailView.swift in Sources */,
 				B1000092 /* AppKeyBreakdown.swift in Sources */,
-				A1000032 /* StatsModels.swift in Sources */,
 				A1000004 /* MenuBarController.swift in Sources */,
 				A1000033 /* KPSDetailView.swift in Sources */,
 				A1000005 /* StatsPopoverViewController.swift in Sources */,
@@ -573,14 +542,14 @@
 		9479D3DF2F9B66190083A75E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Keytide;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = KeytideHelper/KeytideHelper.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 3839Y9532A;
+				DEVELOPMENT_TEAM = GMLVASTPGG;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -597,13 +566,14 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KEYTIDE_HELPER";
 			};
 			name = Debug;
 		};
 		9479D3E02F9B66190083A75E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Keytide;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = KeytideHelper/KeytideHelper.entitlements;
 				CODE_SIGN_IDENTITY = "-";
@@ -625,6 +595,7 @@
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KEYTIDE_HELPER";
 			};
 			name = Release;
 		};
@@ -755,8 +726,8 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 51;
-				DEVELOPMENT_TEAM = 3839Y9532A;
+				CURRENT_PROJECT_VERSION = 52;
+				DEVELOPMENT_TEAM = GMLVASTPGG;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Keytide/Info.plist;
@@ -766,7 +737,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.52.1;
+				MARKETING_VERSION = 1.52.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -783,8 +754,8 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 51;
-				DEVELOPMENT_TEAM = 3839Y9532A;
+				CURRENT_PROJECT_VERSION = 52;
+				DEVELOPMENT_TEAM = GMLVASTPGG;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Keytide/Info.plist;
@@ -794,7 +765,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.52.1;
+				MARKETING_VERSION = 1.52.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

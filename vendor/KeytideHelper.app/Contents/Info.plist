@@ -11,9 +11,9 @@
 	<key>CFBundleExecutable</key>
 	<string>KeytideHelper</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>Keytide</string>
 	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
+	<string>Keytide</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.xuanlprk.KeyTide.helper</string>
 	<key>CFBundleInfoDictionaryVersion</key>

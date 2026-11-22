@@ -1,10 +1,14 @@
 import Cocoa
 
-final class AppStatsWindowController: NSWindowController {
+final class AppStatsWindowController: ReclaimingWindowController {
     static let shared = AppStatsWindowController()
+    private var lastBrowser: AppStatsViewController.BrowserState?
 
-    private init() {
+    private init() { super.init(window: nil) }
+
+    override func makeWindow() -> NSWindow {
         let viewController = AppStatsViewController()
+        viewController.restoreBrowser(lastBrowser)
         let window = NSWindow(contentViewController: viewController)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.title = NSLocalizedString("appStats.windowTitle", comment: "")
@@ -16,24 +20,26 @@ final class AppStatsWindowController: NSWindowController {
         window.backgroundColor = .windowBackgroundColor
         window.setContentSize(NSSize(width: 760, height: 680))
         window.minSize = NSSize(width: 660, height: 520)
-        window.isReleasedWhenClosed = false
-        window.center()
-
-        super.init(window: window)
+        return window
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func preservePresentation() {
+        lastBrowser = (contentViewController as? AppStatsViewController)?.browserState()
+    }
+
     func show() {
-        guard let window = window else { return }
+        let window = windowForPresentation()
+        let wasVisible = window.isVisible
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         AppDelegate.trackPageView("app_stats")
 
-        if let vc = contentViewController as? AppStatsViewController {
+        if wasVisible, let vc = contentViewController as? AppStatsViewController {
             vc.refreshData()
         }
     }

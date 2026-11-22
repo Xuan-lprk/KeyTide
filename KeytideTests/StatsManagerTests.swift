@@ -16,7 +16,8 @@ private struct StatsManagerTestContext {
     let calendar: Calendar
     let clock: MutableTestClock
 
-    func makeManager() -> StatsManager {
+    func makeManager(schedulesAutomaticWork: Bool = false, ownsCaptureStore: Bool = true,
+                     batchesCaptureUpdates: Bool = false) -> StatsManager {
         StatsManager(environment: StatsManager.Environment(
             userDefaults: defaults,
             now: { clock.now },
@@ -29,9 +30,9 @@ private struct StatsManagerTestContext {
                 return formatter
             },
             notificationCenter: NotificationCenter(),
-            schedulesAutomaticWork: false,
+            schedulesAutomaticWork: schedulesAutomaticWork,
             sendThresholdNotification: { _, _, _ in }
-        ))
+        ), ownsCaptureStore: ownsCaptureStore, batchesCaptureUpdates: batchesCaptureUpdates)
     }
 
     func day(offset: Int) -> Date {
@@ -52,7 +53,7 @@ private struct StatsManagerTestContext {
     }
 }
 
-private struct StatsImportPayload: Encodable {
+private struct StatsImportPayload: Codable {
     let version: Int
     let scope: String?
     let exportedAt: Date
@@ -63,6 +64,114 @@ private struct StatsImportPayload: Encodable {
 final class StatsManagerTests: XCTestCase {
     private let statsKey = "dailyStats"
     private let historyKey = "dailyStatsHistory"
+
+    func testCaptureMirrorPresentsLiveCountsWithoutReplacingPersistedStats() throws {
+        let context = try makeContext()
+        defer { context.cleanUp() }
+        let helper = context.makeManager(batchesCaptureUpdates: true)
+        helper.incrementKeyPresses(keyName: "A")
+        helper.flushPendingSave()
+
+        let app = context.makeManager(ownsCaptureStore: false)
+        helper.incrementKeyPresses(keyName: "S")
+        let payload = try JSONEncoder().encode(helper.captureSnapshot(includingHistory: true))
+        let update = try JSONDecoder().decode(StatsManager.CaptureUpdate.self, from: payload)
+        app.receiveCaptureUpdate(update, historyPayload: update.containsHistory ? payload : nil)
+        XCTAssertEqual(app.displayCurrentStats().keyPresses, 2)
+        app.resetStats()
+        app.flushPendingSave()
+        XCTAssertEqual(app.displayCurrentStats().keyPresses, 2)
+        XCTAssertEqual(try decodePersistedCurrent(from: context.defaults).keyPresses, 1)
+
+        helper.flushPendingSave()
+        XCTAssertEqual(try decodePersistedCurrent(from: context.defaults).keyPresses, 2)
+    }
+
+    func testPresentationHistorySurvivesDiscardAndCurrentOnlyUpdates() throws {
+        let context = try makeContext()
+        defer { context.cleanUp() }
+        let today = context.day(offset: 0)
+        let yesterday = context.day(offset: -1)
+        let older = context.day(offset: -2)
+        var previous = makeStats(on: yesterday, keyPresses: 5)
+        var example = AppStats(bundleId: "example.app", displayName: "Example")
+        example.keyPresses = 5
+        previous.appStats["example.app"] = example
+        try seed(defaults: context.defaults, current: makeStats(on: today, keyPresses: 1),
+                 history: [context.dayKey(older): makeStats(on: older, keyPresses: 6)])
+        let app = context.makeManager(ownsCaptureStore: false)
+        XCTAssertEqual(app.displayCurrentStats().keyPresses, 1)
+        XCTAssertEqual(app.localHistorySnapshot()[context.dayKey(older)]?.keyPresses, 6)
+
+        func receive(current: Int, history: [String: DailyStats]?) throws {
+            let payload = try JSONEncoder().encode(StatsManager.CaptureSnapshot(
+                current: makeStats(on: today, keyPresses: current), history: history,
+                kps: 0, cps: 0, sampledAt: 0, calibrationFactor: 1))
+            let update = try JSONDecoder().decode(StatsManager.CaptureUpdate.self, from: payload)
+            app.receiveCaptureUpdate(update, historyPayload: update.containsHistory ? payload : nil)
+        }
+        try receive(current: 7, history: [context.dayKey(yesterday): previous])
+        XCTAssertEqual(app.appStatsSummary(range: .week).first?.keyPresses, 5)
+        app.discardPresentationHistory()
+        try receive(current: 8, history: nil)
+        XCTAssertEqual(app.localHistorySnapshot()[context.dayKey(yesterday)]?.keyPresses, 5)
+        XCTAssertEqual(app.localHistorySnapshot()[context.dayKey(today)]?.keyPresses, 8)
+        XCTAssertNil(app.localHistorySnapshot()[context.dayKey(older)])
+
+        app.discardPresentationHistory()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let export = try decoder.decode(StatsImportPayload.self, from: app.exportStatsData())
+        XCTAssertEqual(export.history[context.dayKey(yesterday)]?.keyPresses, 5)
+
+        try receive(current: 0, history: [:])
+        app.discardPresentationHistory()
+        XCTAssertEqual(app.localHistorySnapshot().keys.sorted(), [context.dayKey(today)])
+        XCTAssertTrue(app.appStatsSummary(range: .all).isEmpty)
+    }
+
+    func testRemovingMenuPresentationStopsIconSamplingButKeepsRecording() throws {
+        let context = try makeContext()
+        defer { context.cleanUp() }
+        let manager = context.makeManager(schedulesAutomaticWork: true)
+        defer { manager.flushPendingSave() }
+        manager.enableDynamicIconColor = true
+
+        let sample = expectation(description: "Visible menu samples the input rate")
+        var receivedRate = false
+        manager.menuBarUpdateHandler = {
+            if !receivedRate && manager.currentInputRatePerSecond > 0 {
+                receivedRate = true
+                sample.fulfill()
+            }
+        }
+        manager.incrementKeyPresses(keyName: "A")
+        wait(for: [sample], timeout: 2)
+
+        // A notification already queued before hiding must not call the old UI.
+        manager.menuBarUpdateHandler = { XCTFail("Hidden menu received an update") }
+        manager.incrementKeyPresses(keyName: "B")
+        manager.menuBarUpdateHandler = nil
+        manager.incrementKeyPresses(keyName: "C")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertEqual(manager.currentInputRatePerSecond, 0)
+        XCTAssertNil(manager.currentIconTintColor)
+        XCTAssertEqual(manager.displayCurrentStats().keyPresses, 3)
+        manager.flushPendingSave()
+        XCTAssertEqual(try decodePersistedCurrent(from: context.defaults).keyPressCounts["C"], 1)
+
+        let restored = expectation(description: "Restored menu receives current totals")
+        var receivedRestore = false
+        manager.menuBarUpdateHandler = {
+            if !receivedRestore {
+                receivedRestore = true
+                XCTAssertEqual(manager.displayCurrentStats().keyPresses, 3)
+                restored.fulfill()
+            }
+        }
+        defer { manager.menuBarUpdateHandler = nil }
+        wait(for: [restored], timeout: 2)
+    }
 
     func testLoadPrefersPersistedCurrentForTodayOverHistoryToday() throws {
         let context = try makeContext()

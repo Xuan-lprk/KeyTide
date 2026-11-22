@@ -28,6 +28,8 @@ final class MouseDistanceCalibrationViewController: NSViewController {
     private var updateTimer: Timer?
     private var appearanceObservation: NSKeyValueObservation?
     private var hasCompleted = false
+    private var calibrationGeneration = 0
+    private var requestingProgress = false
 
     override func loadView() {
         let mainView = AppearanceTrackingView(frame: NSRect(x: 0, y: 0, width: 360, height: 240))
@@ -61,6 +63,7 @@ final class MouseDistanceCalibrationViewController: NSViewController {
     }
 
     deinit {
+        updateTimer?.invalidate()
         appearanceObservation = nil
     }
 
@@ -157,7 +160,9 @@ final class MouseDistanceCalibrationViewController: NSViewController {
     }
 
     private func restartCalibration() {
-        StatsManager.shared.cancelMouseDistanceCalibration()
+        calibrationGeneration &+= 1
+        requestingProgress = false
+        BackgroundInputController.shared.request(.cancelCalibration) { _, _ in }
         hasCompleted = false
         resultLabel.isHidden = true
         resultLabel.stringValue = ""
@@ -167,9 +172,18 @@ final class MouseDistanceCalibrationViewController: NSViewController {
         updateCloseButtonTitle()
         startTimer()
 
-        let calibrationDistanceMeters = 0.10
-        StatsManager.shared.beginMouseDistanceCalibration(knownMeters: calibrationDistanceMeters) { [weak self] result in
-            self?.handleCompletion(result)
+        let generation = calibrationGeneration
+        let meters = (try? JSONEncoder().encode(0.10)) ?? Data()
+        BackgroundInputController.shared.request(.beginCalibration, data: meters) { [weak self] data, ok in
+            guard let self, self.calibrationGeneration == generation else { return }
+            guard ok, let data, let result = try? JSONDecoder().decode(InputCalibrationResult.self, from: data) else {
+                self.handleCompletion(.failure(pixels: 0)); return
+            }
+            if let factor = result.factor {
+                self.handleCompletion(.success(pixels: result.pixels, factor: factor))
+            } else {
+                self.handleCompletion(.failure(pixels: result.pixels))
+            }
         }
     }
 
@@ -216,26 +230,27 @@ final class MouseDistanceCalibrationViewController: NSViewController {
     }
 
     private func refreshLiveStatus() {
-        guard !hasCompleted else { return }
-        if StatsManager.shared.isMouseDistanceCalibrating {
-            let pixels = StatsManager.shared.currentMouseDistanceCalibrationPixels()
-            let pixelText = formatPixels(pixels)
-            pixelLabel.stringValue = pixelText
-            statusLabel.stringValue = String(
-                format: NSLocalizedString("settings.mouseDistanceCalibration.status.moving", comment: ""),
-                pixelText
-            )
-        } else if StatsManager.shared.isMouseDistanceCalibrationActive {
-            pixelLabel.stringValue = formatPixels(0)
-            statusLabel.stringValue = NSLocalizedString("settings.mouseDistanceCalibration.status.waiting", comment: "")
-        } else {
-            statusLabel.stringValue = ""
+        guard !hasCompleted, !requestingProgress else { return }
+        requestingProgress = true
+        let generation = calibrationGeneration
+        BackgroundInputController.shared.request(.calibrationPixels) { [weak self] data, ok in
+            guard let self, self.calibrationGeneration == generation else { return }
+            self.requestingProgress = false
+            guard !self.hasCompleted, ok, let data,
+                  let progress = try? JSONDecoder().decode(InputCalibrationProgress.self, from: data) else { return }
+            let pixelText = self.formatPixels(progress.pixels)
+            self.pixelLabel.stringValue = pixelText
+            self.statusLabel.stringValue = progress.moving ? String(format:
+                NSLocalizedString("settings.mouseDistanceCalibration.status.moving", comment: ""), pixelText)
+                : NSLocalizedString("settings.mouseDistanceCalibration.status.waiting", comment: "")
         }
     }
 
     private func cleanup() {
         stopTimer()
-        StatsManager.shared.cancelMouseDistanceCalibration()
+        calibrationGeneration &+= 1
+        requestingProgress = false
+        BackgroundInputController.shared.request(.cancelCalibration) { _, _ in }
     }
 
     private func updateCloseButtonTitle() {

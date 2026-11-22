@@ -1,6 +1,14 @@
 import AppKit
 
 final class AppStatsViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+    struct BrowserState {
+        let range: Int
+        let query: String
+        let sort: [NSSortDescriptor]
+        let scrollOrigin: NSPoint
+    }
+
+    private var restoredBrowser: BrowserState?
     private var rangeControl: NSSegmentedControl!
     private var searchField: NSSearchField!
     private var tableView: NSTableView!
@@ -59,6 +67,26 @@ final class AppStatsViewController: NSViewController, NSTableViewDataSource, NST
         ) { [weak self] _ in
             self?.refreshData()
         }
+        if let state = restoredBrowser {
+            restoredBrowser = nil
+            // Restore after the first layout and its queued range refresh.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let clipView = self.scrollView.contentView
+                var bounds = clipView.bounds
+                bounds.origin = state.scrollOrigin
+                clipView.scroll(to: clipView.constrainBoundsRect(bounds).origin)
+                self.scrollView.reflectScrolledClipView(clipView)
+            }
+        }
+    }
+
+    func restoreBrowser(_ state: BrowserState?) { restoredBrowser = state }
+
+    func browserState() -> BrowserState? {
+        guard isViewLoaded else { return restoredBrowser }
+        return BrowserState(range: rangeControl.selectedSegment, query: searchField.stringValue,
+                            sort: tableView.sortDescriptors, scrollOrigin: scrollView.contentView.bounds.origin)
     }
 
     override func viewWillDisappear() {
@@ -84,10 +112,11 @@ final class AppStatsViewController: NSViewController, NSTableViewDataSource, NST
             NSLocalizedString("appStats.range.month", comment: ""),
             NSLocalizedString("appStats.range.all", comment: "")
         ], trackingMode: .selectOne, target: self, action: #selector(rangeChanged))
-        rangeControl.selectedSegment = 0
+        rangeControl.selectedSegment = restoredBrowser?.range ?? 0
         rangeControl.controlSize = .regular
 
         searchField = NSSearchField()
+        searchField.stringValue = restoredBrowser?.query ?? ""
         searchField.placeholderString = NSLocalizedString("appStats.searchPlaceholder", comment: "")
         searchField.target = self
         searchField.action = #selector(searchChanged)
@@ -223,7 +252,7 @@ final class AppStatsViewController: NSViewController, NSTableViewDataSource, NST
             contentStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
             contentStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -24)
         ])
-        tableView.sortDescriptors = [NSSortDescriptor(key: "keys", ascending: false)]
+        tableView.sortDescriptors = restoredBrowser?.sort ?? [NSSortDescriptor(key: "keys", ascending: false)]
     }
 
     func refreshData() {

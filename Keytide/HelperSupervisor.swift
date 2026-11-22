@@ -82,6 +82,7 @@ final class HelperSupervisor {
             "Label": HelperLocations.launchAgentLabel,
             "ProgramArguments": [binary],
             "MachServices": [HelperLocations.machServiceName: true],
+            "KeepAlive": ["PathState": [HelperLocations.inputBackgroundMarker.path: true]],
             "LimitLoadToSessionType": ["Aqua"],
             "ProcessType": "Interactive"
         ]

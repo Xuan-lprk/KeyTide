@@ -1,6 +1,6 @@
 "permission.title" = "需要辅助功能权限";
 "permission.message" = "Keytide 需要辅助功能权限来统计键盘和鼠标活动。\n\n点击“打开授权引导”后，系统会打开“隐私与安全性 > 辅助功能”。请在列表中找到 KeytideHelper 并打开开关完成授权。";
-"permission.reinstallTip" = "授权一次即可，今后版本升级不会再要求重新授权。";
+"permission.reinstallTip" = "如果 KeytideHelper 已开启，但升级后仍提示授权，请移除该条目。点击「＋」，按 ⌘⇧G，再选中已安装的 Helper：\n%@";
 "permission.openSettings" = "打开授权引导";
 "permission.later" = "稍后";
 "button.permission" = "获取权限";
@@ -12,9 +12,6 @@
 "settings.section.notifications" = "通知";
 "settings.section.data" = "数据";
 "settings.dynamicIconColor" = "启用动态图标颜色";
-"settings.dynamicIconColorStyle" = "启用后显示方式";
-"settings.dynamicIconColorStyle.icon" = "图标着色";
-"settings.dynamicIconColorStyle.dot" = "状态圆点";
 "settings.dynamicIconColorWindow" = "统计时间窗口 (秒)";
 "settings.mouseDistanceCalibration" = "鼠标距离校准";
 "settings.mouseDistanceCalibration.windowTitle" = "鼠标距离校准";
@@ -605,7 +602,7 @@
 "welcome.reopen" = "重新打开使用指引";
 
 // Explicit opt-in, local-only chronological replay.
-"replay.recording.title" = "真实回放记录";
+"replay.recording.title" = "键盘回放";
 "replay.recording.enable" = "保存真实按键顺序";
 "replay.recording.help" = "默认关闭。开启后跨 App 记录物理键位、按下／松开顺序和毫秒时间，仅在本机加密保存，直到你手动删除。顺序可能用于推断输入内容；不上传、不加入普通统计导出。停止记录不会删除已有明细。";
 "replay.recording.off" = "真实回放记录 · 已关闭";
@@ -614,11 +611,11 @@
 "replay.recording.suspended" = "真实回放记录 · 已暂挂";
 "replay.recording.unavailable" = "记录未能启动或已停止。请检查新版 Helper、权限及本地存储后重新开启；没有转为明文保存。";
 "replay.recording.stop" = "停止真实回放记录";
-"replay.recording.delete" = "删除全部回放明细…";
+"replay.recording.delete" = "删除键盘回放记录…";
 "replay.consent.title" = "开启跨 App 的真实回放记录？";
-"replay.consent.body" = "这会记录你在其他 App 中按了哪些物理键、先后顺序、按下与松开时间（毫秒）。即使不读取文本字段，这些记录仍可能推断出密码、聊天等输入内容。不能保证所有敏感输入都能被识别。\n\n记录仅在本机加密保存，不上传；长期保留，直到你手动删除。菜单栏红点表示功能已开启，右键菜单可停止记录。尊重系统安全输入，受保护或断连期间会有缺失。原有历史不能补回顺序。";
+"replay.consent.body" = "这会记录你在其他 App 中按了哪些物理键、先后顺序、按下与松开时间（毫秒）。即使不读取文本字段，这些记录仍可能推断出密码、聊天等输入内容。不能保证所有敏感输入都能被识别。\n\n记录仅在本机加密保存，不上传；长期保留，直到你手动删除。可在「设置 → 数据」或菜单栏右键菜单查看状态并停止记录。尊重系统安全输入，受保护或断连期间会有缺失。原有历史不能补回顺序。";
 "replay.consent.enable" = "开启本机记录";
-"replay.delete.title" = "永久删除全部回放明细？";
+"replay.delete.title" = "永久删除所有键盘回放记录？";
 "replay.delete.body" = "同时停止记录。聚合统计、应用统计和键盘累计成长不会删除；这些日期的真实顺序将无法恢复。";
 "replay.delete.failed" = "部分回放明细未能删除，请检查本地文件访问权限。";
 "replay.loading" = "正在读取本机回放明细…";
@@ -650,7 +647,7 @@
 "trackpad.stardust" = "星尘";
 "trackpad.brush" = "触控板画笔";
 "trackpad.clear" = "清空";
-"trackpad.preview.help" = "实时预览。点击画布隐藏指针，Esc 退出。后台记录需单独开启。";
+"trackpad.preview.help" = "点击画布隐藏指针，按 Esc 恢复。可在「设置 → 数据」管理录制。";
 "trackpad.ready" = "预览已停止 · 未录制";
 "trackpad.waiting" = "等待真实触点 · 已启动设备不代表已收到数据";
 "trackpad.unavailable" = "当前设备无法开启触控板预览，基本键鼠统计不受影响。";
@@ -664,9 +661,9 @@
 
 "trackpad.replay" = "回放当天";
 
-"trackpad.delete" = "删除记录";
+"trackpad.delete" = "删除触控板记录…";
 
-"trackpad.delete.confirm" = "删除全部触控板记录？聚合统计保留。";
+"trackpad.delete.confirm" = "删除全部触控板记录？";
 
 "trackpad.cancel" = "取消";
 
@@ -676,6 +673,32 @@
 
 "trackpad.replay.empty" = "该日期无可读取记录。";
 
-"trackpad.consent" = "记录跨 App 的指尖位置、顺序、源时间和相对压力？仅本机加密保存直到手动删除，不上传、不加入统计导出。关闭窗口不会停止记录。";
+"trackpad.consent" = "允许 Helper 记录跨 App 的指尖位置、顺序、源时间和相对压力？记录仅在本机加密保存直至手动删除，不上传，不加入统计导出。如需在退出 Keytide 后继续，请在通用设置中允许后台记录。";
 
-"trackpad.record.always" = "全天后台记录";
+"trackpad.record.always" = "触控板回放记录";
+
+"trackpad.helper.unavailable" = "触控板 Helper 未连接。请使用已更新 Helper 的新版 Keytide。";
+"trackpad.helper.recording" = "Helper 正在本机记录。";
+"trackpad.helper.suspended" = "Mac 睡眠或用户会话不活跃时暂停记录。";
+"settings.appLogin.help" = "登录时打开 Keytide 菜单栏应用。";
+"backgroundInput.title" = "退出后继续统计";
+"backgroundInput.help" = "完成设置后，退出 Keytide 仍会统计键鼠活动，下次登录时自动恢复。仅已单独开启的回放会继续记录明细。";
+"backgroundInput.error" = "Helper 未能完成请求。请确认 Keytide 已连接 Helper 后重试。";
+"monitoring.helperVersionMismatch" = "已安装的 Helper 与当前版本的 Keytide 不兼容。";
+"backgroundInput.waiting" = "Helper 连接并开始采集后生效。";
+"backgroundInput.savingOff" = "正在等待 Helper 应用关闭设置。";
+"backgroundInput.syncFailed" = "已保存选择，Helper 未能应用。重新连接或拨动开关可重试。";
+"welcome.replay.title" = "为回放保存记录";
+"welcome.replay.body" = "可选。选择 Keytide 可以在你使用其他 App 时记录哪些明细。";
+"welcome.replay.keyboard" = "键盘回放记录";
+"welcome.replay.keyboardHelp" = "保存真实按键顺序及按下、松开时间。这些记录可能推断出密码和私密消息。";
+"welcome.replay.trackpadHelp" = "保存指尖在触控板表面的移动轨迹、时间和相对压力。";
+"welcome.replay.storage" = "记录仅在本机加密保存，直到你手动删除。Keytide 不会上传记录。若已开启「退出后继续统计」，退出 App 后录制仍会继续。可在「设置 → 数据」管理。";
+"welcome.replay.enable" = "开启所选录制";
+"welcome.replay.skip" = "暂时跳过";
+"welcome.replay.applying" = "正在启动录制…";
+"welcome.replay.failed" = "有选中的录制未能启动。可以重试，或完成引导后到「设置 → 数据」再试。";
+"trackpad.record.help" = "跨 App 保存触控板轨迹、时间和相对压力，仅在本机加密保存至手动删除。开启「退出后继续统计」时，关闭 Keytide 后也会继续录制。";
+"trackpad.record.starting" = "正在应用录制设置…";
+"trackpad.record.off" = "录制已关闭";
+"trackpad.delete.help" = "这会停止触控板录制，并永久删除已保存的轨迹。";

@@ -2,6 +2,7 @@ import XCTest
 import CoreGraphics
 import IOKit.hidsystem
 @testable import KeytideCore
+@testable import KeytideEventCore
 
 final class StatsModelsTests: XCTestCase {
     func testPhysicalPlusRegression() {

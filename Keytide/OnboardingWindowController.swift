@@ -1,8 +1,8 @@
 import AppKit
 import QuartzCore
 
-/// A stable three-step welcome. All installation and permission effects remain
-/// in AppDelegate; this controller only presents their current state.
+/// Installation and system permissions stay in AppDelegate. Replay choices are
+/// submitted to the existing recording services only after explicit confirmation.
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let progress: OnboardingProgress
     private let status: MonitoringStatus
@@ -12,10 +12,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let secondary = NSButton()
     private let login = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let loginError = NSTextField(wrappingLabelWithString: "")
+    private let backgroundInputSwitch = NSSwitch()
     private let stepIndicator = WelcomeStepIndicator()
     private let welcomePage = NSStackView()
     private let setupPage = NSStackView()
+    private let replayPage = NSStackView()
     private let readyPage = NSStackView()
+    private let keyboardReplay = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let trackpadReplay = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private let replayError = NSTextField(wrappingLabelWithString: "")
     private let serviceRow = WelcomeStateRow(title: NSLocalizedString("welcome.service", comment: ""))
     private let permissionRow = WelcomeStateRow(title: NSLocalizedString("welcome.permission", comment: ""))
     private let captureRow = WelcomeStateRow(title: NSLocalizedString("welcome.capture", comment: ""))
@@ -23,9 +28,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let readySignal = WelcomeReadySignal()
     private let firstPressLabel = NSTextField(labelWithString: "")
     private var observer: NSObjectProtocol?
+    private var backgroundInputObserver: NSObjectProtocol?
     private var statsObserver: UUID?
     private var setupRequested = false
     private var showingSetup: Bool
+    private var replayStepFinished = false
+    private var submittingReplay = false
     private var didReceiveFirstInput = false
     private var inputBaseline: (date: Date, count: Int)?
     private var lastPresentation = ""
@@ -60,6 +68,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             guard self?.window?.isVisible == true else { return }
             self?.render()
         }
+        backgroundInputObserver = NotificationCenter.default.addObserver(forName: BackgroundInputController.didChange,
+            object: nil, queue: .main) { [weak self] _ in self?.updateBackgroundInputState() }
         HelperXPCClient.shared.addStateObserver { [weak self] _ in
             DispatchQueue.main.async {
                 guard self?.window?.isVisible == true else { return }
@@ -71,6 +81,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
+        if let backgroundInputObserver { NotificationCenter.default.removeObserver(backgroundInputObserver) }
         stopObservingInput()
     }
 
@@ -89,14 +100,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         bodyLabel.textColor = .secondaryLabelColor
         bodyLabel.alignment = .center
         stepIndicator.translatesAutoresizingMaskIntoConstraints = false
-        stepIndicator.widthAnchor.constraint(equalToConstant: 66).isActive = true
+        stepIndicator.widthAnchor.constraint(equalToConstant: 86).isActive = true
         stepIndicator.heightAnchor.constraint(equalToConstant: 8).isActive = true
         for item in [titleLabel, bodyLabel, stepIndicator] as [NSView] {
             item.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(item)
         }
 
-        for page in [welcomePage, setupPage, readyPage] {
+        for page in [welcomePage, setupPage, replayPage, readyPage] {
             page.orientation = .vertical
             page.alignment = .centerX
             page.spacing = 18
@@ -106,6 +117,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
         buildWelcome()
         buildSetup()
+        buildReplay()
         buildReady()
 
         primary.bezelStyle = .rounded
@@ -152,7 +164,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             loginError.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -38),
             loginError.bottomAnchor.constraint(equalTo: login.topAnchor, constant: -6)
         ])
-        for page in [welcomePage, setupPage, readyPage] {
+        for page in [welcomePage, setupPage, replayPage, readyPage] {
             NSLayoutConstraint.activate([
                 page.topAnchor.constraint(equalTo: bodyLabel.bottomAnchor, constant: 24),
                 page.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 44),
@@ -170,6 +182,28 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         let privacy = text("welcome.privacy", size: 11, secondary: true)
         welcomePage.addArrangedSubview(privacy)
         welcomePage.setCustomSpacing(15, after: preview)
+
+        let title = NSTextField(labelWithString: NSLocalizedString("backgroundInput.title", comment: ""))
+        title.font = .systemFont(ofSize: 13, weight: .medium)
+        backgroundInputSwitch.controlSize = .small
+        backgroundInputSwitch.target = self
+        backgroundInputSwitch.action = #selector(backgroundInputChanged)
+        backgroundInputSwitch.setAccessibilityLabel(title.stringValue)
+        let row = NSStackView(views: [title, NSView(), backgroundInputSwitch])
+        row.alignment = .centerY
+        let help = text("backgroundInput.help", size: 11, secondary: true)
+        help.alignment = .natural
+        let options = NSStackView(views: [row, help])
+        options.orientation = .vertical
+        options.alignment = .leading
+        options.spacing = 4
+        welcomePage.addArrangedSubview(options)
+        NSLayoutConstraint.activate([
+            options.widthAnchor.constraint(equalTo: welcomePage.widthAnchor),
+            row.widthAnchor.constraint(equalTo: options.widthAnchor),
+            help.widthAnchor.constraint(equalTo: options.widthAnchor)
+        ])
+        updateBackgroundInputState()
     }
 
     private func buildSetup() {
@@ -195,6 +229,46 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         errorLabel.maximumNumberOfLines = 3
         setupPage.addArrangedSubview(errorLabel)
         errorLabel.widthAnchor.constraint(equalTo: setupPage.widthAnchor).isActive = true
+    }
+
+    private func updateBackgroundInputState() {
+        backgroundInputSwitch.state = BackgroundInputController.shared.isEnabled ? .on : .off
+    }
+
+    @objc private func backgroundInputChanged() {
+        BackgroundInputController.shared.setAllowed(backgroundInputSwitch.state == .on)
+    }
+
+    private func buildReplay() {
+        replayPage.alignment = .leading
+        replayPage.spacing = 10
+        for (control, title, description) in [
+            (keyboardReplay, "welcome.replay.keyboard", "welcome.replay.keyboardHelp"),
+            (trackpadReplay, "trackpad.record.always", "welcome.replay.trackpadHelp")
+        ] {
+            control.title = NSLocalizedString(title, comment: "")
+            control.state = .on
+            control.target = self
+            control.action = #selector(updateReplayControls)
+            let help = text(description, size: 12, secondary: true)
+            help.alignment = .natural
+            control.setAccessibilityHelp(help.stringValue)
+            let option = NSStackView(views: [control, help])
+            option.orientation = .vertical
+            option.alignment = .leading
+            option.spacing = 4
+            replayPage.addArrangedSubview(option)
+            option.widthAnchor.constraint(equalTo: replayPage.widthAnchor).isActive = true
+            help.widthAnchor.constraint(equalTo: option.widthAnchor).isActive = true
+        }
+        for label in [text("welcome.replay.storage", size: 11, secondary: true), replayError] {
+            label.alignment = .natural
+            replayPage.addArrangedSubview(label)
+            label.widthAnchor.constraint(equalTo: replayPage.widthAnchor).isActive = true
+        }
+        replayError.font = .systemFont(ofSize: 11)
+        replayError.textColor = .systemRed
+        replayError.isHidden = true
     }
 
     private func buildReady() {
@@ -224,6 +298,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             didReceiveFirstInput = false
             inputBaseline = nil
             stopObservingInput()
+            replayStepFinished = false
+            keyboardReplay.state = .on
+            trackpadReplay.state = .on
+            replayError.isHidden = true
         }
         login.state = loginEnabled?() == true ? .on : .off
         render()
@@ -234,23 +312,34 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private var ready: Bool { showingSetup && status.state == .monitoring }
+    private var choosingReplay: Bool { showingSetup && status.state == .monitoring && !replayStepFinished }
+    private var ready: Bool { showingSetup && status.state == .monitoring && replayStepFinished }
 
     private func render() {
-        let stage = !showingSetup ? 0 : ready ? 2 : 1
-        titleLabel.stringValue = NSLocalizedString(["welcome.title", "welcome.connect", "welcome.ready"][stage], comment: "")
-        bodyLabel.stringValue = NSLocalizedString(["welcome.subtitle", "welcome.connectBody", "welcome.readyBody"][stage], comment: "")
+        let stage = !showingSetup ? 0 : ready ? 3 : choosingReplay ? 2 : 1
+        titleLabel.stringValue = NSLocalizedString(["welcome.title", "welcome.connect", "welcome.replay.title", "welcome.ready"][stage], comment: "")
+        bodyLabel.stringValue = NSLocalizedString(["welcome.subtitle", "welcome.connectBody", "welcome.replay.body", "welcome.readyBody"][stage], comment: "")
         stepIndicator.step = stage
         welcomePage.isHidden = stage != 0
         setupPage.isHidden = stage != 1
-        readyPage.isHidden = stage != 2
+        replayPage.isHidden = stage != 2
+        readyPage.isHidden = stage != 3
         login.isHidden = !ready
         loginError.isHidden = !ready || loginError.stringValue.isEmpty
         primary.title = NSLocalizedString(!showingSetup ? "welcome.start" : ready ? "welcome.openStats" : status.failureDescription != nil ? "monitoring.retry" : "welcome.openSettings", comment: "")
         primary.isEnabled = !showingSetup || status.state != .starting
         secondary.title = NSLocalizedString(ready ? "welcome.openKeyboard" : !showingSetup ? "welcome.preview" : "welcome.later", comment: "")
-        // No implicit Return action while the user is invited to try a key.
-        primary.keyEquivalent = ready ? "" : "\r"
+        if choosingReplay {
+            // Subscribe to the current recording status before the first
+            // confirmation, even if neither Studio nor Settings was opened.
+            _ = TrackpadAppService.shared
+            updateReplayControls()
+        } else {
+            secondary.isEnabled = true
+            secondary.isHidden = false
+        }
+        // No implicit Return action for recording consent or the typing prompt.
+        primary.keyEquivalent = stage < 2 ? "\r" : ""
         updateSetupState()
         firstPressLabel.stringValue = NSLocalizedString(didReceiveFirstInput ? "welcome.firstReceived" : "welcome.firstPress", comment: "")
         let signature = "\(stage)"
@@ -289,7 +378,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     private func animateStageChange() {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        for page in [welcomePage, setupPage, readyPage] where !page.isHidden {
+        for page in [welcomePage, setupPage, replayPage, readyPage] where !page.isHidden {
             let fade = CABasicAnimation(keyPath: "opacity")
             fade.fromValue = 0.45
             fade.toValue = 1
@@ -340,6 +429,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             if progress.shouldPresentAutomatically { progress.beginSetup() }
             render()
             prepareOnce()
+        } else if choosingReplay {
+            confirmReplay()
         } else if ready {
             finish(open: onOpenStats)
         } else if status.failureDescription != nil { onRetry?() }
@@ -347,9 +438,64 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func secondaryAction() {
-        if ready { finish(open: onOpenKeyboard) }
+        if choosingReplay {
+            guard !submittingReplay else { return }
+            replayStepFinished = true
+            render()
+        } else if ready { finish(open: onOpenKeyboard) }
         else if !showingSetup { onOpenExample?() }
         else { close() }
+    }
+
+    @objc private func updateReplayControls() {
+        guard choosingReplay else { return }
+        let selected = keyboardReplay.state == .on || trackpadReplay.state == .on
+        let title = submittingReplay ? "welcome.replay.applying" : selected ? "welcome.replay.enable" : "welcome.replay.skip"
+        primary.title = NSLocalizedString(title, comment: "")
+        primary.isEnabled = !submittingReplay
+        secondary.title = NSLocalizedString("welcome.replay.skip", comment: "")
+        secondary.isHidden = !selected
+        secondary.isEnabled = !submittingReplay
+        keyboardReplay.isEnabled = !submittingReplay
+        trackpadReplay.isEnabled = !submittingReplay
+    }
+
+    private func confirmReplay() {
+        guard !submittingReplay, choosingReplay else { return }
+        let enableKeyboard = keyboardReplay.state == .on && !KeyReplayRecording.shared.isEnabled
+        let enableTrackpad = trackpadReplay.state == .on && !TrackpadAppService.shared.recording
+        guard enableKeyboard || enableTrackpad else {
+            replayStepFinished = true
+            render()
+            return
+        }
+        submittingReplay = true
+        replayError.isHidden = true
+        updateReplayControls()
+        let requests = DispatchGroup()
+        var applied = true
+        func complete(_ ok: Bool) {
+            applied = applied && ok
+            requests.leave()
+        }
+        if enableKeyboard {
+            requests.enter()
+            KeyReplayRecording.shared.setEnabled(true, completion: complete)
+        }
+        if enableTrackpad {
+            requests.enter()
+            TrackpadAppService.shared.setRecording(true, completion: complete)
+        }
+        requests.notify(queue: .main) { [weak self] in
+            guard let self else { return }
+            self.submittingReplay = false
+            if applied { self.replayStepFinished = true }
+            else {
+                self.replayError.stringValue = NSLocalizedString("welcome.replay.failed", comment: "")
+                self.replayError.isHidden = false
+            }
+            self.render()
+        }
     }
 
     private func finish(open: (() -> Void)?) {
@@ -373,7 +519,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         stopObservingInput()
-        for page in [welcomePage, setupPage, readyPage] { page.layer?.removeAnimation(forKey: "welcomeStage") }
+        for page in [welcomePage, setupPage, replayPage, readyPage] { page.layer?.removeAnimation(forKey: "welcomeStage") }
         readySignal.layer?.removeAllAnimations()
         readySignal.removeAnimations()
         if ready { _ = progress.complete(isMonitoring: true) }
@@ -485,11 +631,11 @@ private final class WelcomeStepIndicator: NSView {
             needsDisplay = true
             setAccessibilityElement(true)
             setAccessibilityRole(.valueIndicator)
-            setAccessibilityValue("\(step + 1) / 3")
+            setAccessibilityValue("\(step + 1) / 4")
         }
     }
     override func draw(_ dirtyRect: NSRect) {
-        for index in 0..<3 {
+        for index in 0..<4 {
             let active = index == step
             (active ? NSColor.controlAccentColor : NSColor.tertiaryLabelColor).setFill()
             let rect = NSRect(x: CGFloat(index) * 22, y: 0, width: active ? 20 : 8, height: 3)

@@ -1,6 +1,15 @@
 import AppKit
 
 final class AllTimeStatsViewController: NSViewController {
+    struct BrowsingState {
+        let range: Int
+        let periodOffset: Int
+        let selectedDate: Date?
+        let didSetInitialSelection: Bool
+        let calendarExpanded: Bool
+        let metric: ActivityHeatmapView.Metric
+    }
+
     private enum Range: Int {
         case today = 0, week = 1, month = 2
 
@@ -53,6 +62,24 @@ final class AllTimeStatsViewController: NSViewController {
     private var visibleDays: [ActivityHeatmapView.DayActivity] = []
     private var loadedDays: [Date: ActivityHeatmapView.DayActivity] = [:]
     private var didSetInitialSelection = false
+    private var calendarExpanded = true
+    private var heatmapMetric = ActivityHeatmapView.Metric.allCases[0]
+
+    func restoreBrowsing(_ state: BrowsingState?) {
+        guard let state else { return }
+        range = Range(rawValue: state.range) ?? .week
+        periodOffset = state.periodOffset
+        selectedDate = state.selectedDate
+        didSetInitialSelection = state.didSetInitialSelection
+        calendarExpanded = state.calendarExpanded
+        heatmapMetric = state.metric
+    }
+
+    func browsingState() -> BrowsingState {
+        BrowsingState(range: range.rawValue, periodOffset: periodOffset, selectedDate: selectedDate,
+                      didSetInitialSelection: didSetInitialSelection, calendarExpanded: calendarExpanded,
+                      metric: heatmapMetric)
+    }
 
     override func loadView() {
         let content = AppearanceTrackingView(frame: NSRect(x: 0, y: 0, width: 900, height: 740))
@@ -271,7 +298,6 @@ final class AllTimeStatsViewController: NSViewController {
 
     private func setupCalendar() {
         calendarButton = ActivityDisclosureButton(title: NSLocalizedString("allTimeStats.heatmap", comment: ""), target: self, action: #selector(toggleCalendar))
-        calendarButton.setExpanded(true)
         contentStack.setCustomSpacing(14, after: contentStack.arrangedSubviews.last!)
         StatsWindowStyle.fullWidth(calendarButton, in: contentStack)
 
@@ -280,10 +306,9 @@ final class AllTimeStatsViewController: NSViewController {
         calendarContent.alignment = .leading
         calendarContent.spacing = 11
         calendarContent.edgeInsets = NSEdgeInsets(top: 13, left: 0, bottom: 0, right: 0)
-        calendarContent.isHidden = false
 
         heatmapMetricControl = NSSegmentedControl(labels: ActivityHeatmapView.Metric.allCases.map(\.title), trackingMode: .selectOne, target: self, action: #selector(heatmapMetricChanged))
-        heatmapMetricControl.selectedSegment = 0
+        heatmapMetricControl.selectedSegment = heatmapMetric.rawValue
         heatmapMetricControl.controlSize = .small
         heatmapMetricControl.setAccessibilityLabel(NSLocalizedString("heatmap.metricLabel", comment: ""))
         let header = NSStackView(views: [NSView(), heatmapMetricControl])
@@ -296,6 +321,7 @@ final class AllTimeStatsViewController: NSViewController {
         StatsWindowStyle.fullWidth(heatmapIntensityLabel, in: calendarContent)
 
         heatmapView = ActivityHeatmapView()
+        heatmapView.metric = heatmapMetric
         heatmapView.onOpenDay = { date in KeyboardHeatmapWindowController.shared.show(day: date) }
         heatmapView.onSelectionChanged = { [weak self] day in self?.calendarSelectionChanged(day) }
         monthCalendarView = ActivityMonthCalendarView()
@@ -303,8 +329,8 @@ final class AllTimeStatsViewController: NSViewController {
         monthCalendarView.onSelectionChanged = { [weak self] day in self?.calendarSelectionChanged(day) }
         StatsWindowStyle.fullWidth(monthCalendarView, in: calendarContent)
         calendarContainer = wrappingContainer(for: calendarContent)
-        calendarContainer.isHidden = false
         StatsWindowStyle.fullWidth(calendarContainer, in: contentStack)
+        setCalendarExpanded(calendarExpanded)
     }
 
     private func setupInsights() {
@@ -554,6 +580,7 @@ final class AllTimeStatsViewController: NSViewController {
     }
 
     private func setCalendarExpanded(_ expanded: Bool) {
+        calendarExpanded = expanded
         calendarContent.isHidden = !expanded
         calendarButton.setExpanded(expanded)
         calendarButton.setAccessibilityExpanded(expanded)
@@ -638,6 +665,7 @@ final class AllTimeStatsViewController: NSViewController {
 
     @objc private func heatmapMetricChanged() {
         guard let metric = ActivityHeatmapView.Metric(rawValue: heatmapMetricControl.selectedSegment) else { return }
+        heatmapMetric = metric
         heatmapView.metric = metric
         updateHeatmapMetricDescription()
     }

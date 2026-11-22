@@ -9,8 +9,7 @@ import Foundation
 
     func stopMonitoring()
 
-    /// Explicitly opt in to additional key-up and source timestamp metadata.
-    /// Reset to false when the authenticated connection closes.
+    /// Retained for version detection by legacy clients. v4 uses controlInput.
     func setReplayRecordingEnabled(_ enabled: Bool, reply: @escaping (Bool) -> Void)
 
     /// 让 helper 调一次 `AXIsProcessTrustedWithOptions(prompt: true)`，目的是把
@@ -19,8 +18,63 @@ import Foundation
     func promptAccessibility(reply: @escaping (_ granted: Bool) -> Void)
 
     func helperBundleURL(reply: @escaping (_ path: String) -> Void)
+
+    func controlTrackpad(_ command: Int, reply: @escaping (Int, Bool) -> Void)
+    func controlInput(_ command: Int, argument: Data, reply: @escaping (Data?, Bool) -> Void)
 }
 
 @objc public protocol KeytideEventSinkProtocol {
     func receiveEvent(_ payload: [String: Any])
+    @objc optional func receiveTrackpadPreview(_ frames: Data)
+    @objc optional func receiveTrackpadStatus(_ status: Int)
+    @objc optional func receiveInputSnapshot(_ snapshot: Data)
+    @objc optional func receiveKeyboardReplayStatus(_ status: Int)
+    @objc optional func receiveThresholdNotification(_ isKeyPress: Bool, count: Int, threshold: Int)
+}
+
+enum InputControl: Int {
+    case backgroundStatus, enableBackground, disableBackground, resetStats, mergeStats, overwriteStats
+    case updateAttribution, enableKeyboardReplay, disableKeyboardReplay, keyboardReplayStatus, flushKeyboardReplay, deleteKeyboardReplay
+    case beginCalibration, calibrationPixels, cancelCalibration
+    case updateThresholdPreferences
+}
+
+struct BackgroundInputStatus: Codable {
+    let allowed: Bool
+    let listening: Bool
+}
+
+enum BackgroundInputPreference {
+    static let requestedKey = "backgroundInput.requested.v1"
+    static let appliedKey = "helper.backgroundInputAllowed.v1"
+
+    static func isEnabled(in defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: requestedKey) as? Bool
+            ?? defaults.object(forKey: appliedKey) as? Bool
+            ?? true
+    }
+}
+
+struct InputCalibrationResult: Codable {
+    let pixels: Double
+    let factor: Double?
+}
+
+struct InputCalibrationProgress: Codable {
+    let moving: Bool
+    let pixels: Double
+}
+
+struct InputThresholdPreferences: Codable {
+    let enabled: Bool
+    let keyPresses: Int
+    let clicks: Int
+}
+
+enum TrackpadControl: Int {
+    case status, enable, disable, startPreview, stopPreview, flush, delete
+}
+
+enum TrackpadRecordingStatus: Int {
+    case off, recording, failed, suspended
 }

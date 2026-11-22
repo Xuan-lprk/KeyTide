@@ -8,7 +8,13 @@ protocol EventPayloadSink: AnyObject {
     func forward(payload: [String: Any])
 }
 
-final class EventTapController {
+protocol InputEventTap: AnyObject {
+    func start(sink: EventPayloadSink) -> Int
+    func stop()
+    func setReplayRecordingEnabled(_ enabled: Bool)
+}
+
+final class EventTapController: InputEventTap {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private weak var sink: EventPayloadSink?

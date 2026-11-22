@@ -346,6 +346,9 @@ final class GrowthKeyboardViewController: NSViewController {
     func releaseResourcesForClosedWindow() {
         isPresented = false
         pausePlayback()
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
+        observedWindow = nil
         spatialRenderer?.setActive(false)
         spatialRenderer?.removeFromSuperview()
         spatialRenderer = nil

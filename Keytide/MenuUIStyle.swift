@@ -17,7 +17,14 @@ extension Notification.Name {
 protocol MenuStatsPresenting: AnyObject {
     var preferredSizeDidChange: ((NSSize) -> Void)? { get set }
     var preferredContentSize: NSSize { get }
+    var historySelection: MenuHistorySelection { get set }
     func prepareForPopoverPresentation()
+}
+
+struct MenuHistorySelection {
+    var range = 0
+    var metric = 0
+    var chartStyle = 0
 }
 
 extension StatsPopoverViewController: MenuStatsPresenting {}

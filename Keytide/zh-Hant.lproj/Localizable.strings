@@ -1,6 +1,6 @@
 "permission.title" = "需要輔助功能權限";
 "permission.message" = "Keytide 需要輔助功能權限來統計鍵盤和鼠標活動。\n\n點擊“打開授權引導”後，系統會打開“隱私與安全性 > 輔助功能”。請在列表中找到 KeytideHelper 並打開開關完成授權。";
-"permission.reinstallTip" = "授權一次即可，今後版本升級不會再要求重新授權。";
+"permission.reinstallTip" = "如果 KeytideHelper 已開啟，但更新後仍提示授權，請移除該項目。按一下「＋」，按 ⌘⇧G，再選取已安裝的 Helper：\n%@";
 "permission.openSettings" = "打開授權引導";
 "permission.later" = "稍後";
 "button.permission" = "獲取權限";
@@ -12,9 +12,6 @@
 "settings.section.notifications" = "通知";
 "settings.section.data" = "數據";
 "settings.dynamicIconColor" = "啓用動態圖標顏色";
-"settings.dynamicIconColorStyle" = "啓用後顯示方式";
-"settings.dynamicIconColorStyle.icon" = "圖標著色";
-"settings.dynamicIconColorStyle.dot" = "狀態圓點";
 "settings.dynamicIconColorWindow" = "統計時間窗口 (秒)";
 "settings.mouseDistanceCalibration" = "鼠標距離校准";
 "settings.mouseDistanceCalibration.windowTitle" = "鼠標距離校准";
@@ -605,7 +602,7 @@
 "welcome.reopen" = "重新開啟使用指引";
 
 // Explicit opt-in, local-only chronological replay.
-"replay.recording.title" = "真實回放記錄";
+"replay.recording.title" = "鍵盤重播";
 "replay.recording.enable" = "儲存真實按鍵順序";
 "replay.recording.help" = "預設關閉。開啟後跨 App 記錄實體鍵位、按下／鬆開順序和毫秒時間，僅在本機加密儲存，直到你手動刪除。順序可能用於推斷輸入內容；不上傳、不加入一般統計匯出。停止記錄不會刪除已有明細。";
 "replay.recording.off" = "真實回放記錄 · 已關閉";
@@ -614,11 +611,11 @@
 "replay.recording.suspended" = "真實回放記錄 · 已暫停";
 "replay.recording.unavailable" = "記錄未能啟動或已停止。請檢查新版 Helper、權限及本機儲存後重新開啟；沒有改用明文儲存。";
 "replay.recording.stop" = "停止真實回放記錄";
-"replay.recording.delete" = "刪除全部回放明細…";
+"replay.recording.delete" = "刪除鍵盤重播記錄…";
 "replay.consent.title" = "開啟跨 App 的真實回放記錄？";
-"replay.consent.body" = "這會記錄你在其他 App 中按了哪些實體鍵、先後順序、按下與鬆開時間（毫秒）。即使不讀取文字欄位，這些記錄仍可能推斷出密碼、聊天等輸入內容。不能保證所有敏感輸入都能被識別。\n\n記錄僅在本機加密儲存，不上傳；長期保留，直到你手動刪除。選單列紅點表示功能已開啟，右鍵選單可停止記錄。尊重系統安全輸入，受保護或斷線期間會有缺漏。原有歷史不能補回順序。";
+"replay.consent.body" = "這會記錄你在其他 App 中按了哪些實體鍵、先後順序、按下與鬆開時間（毫秒）。即使不讀取文字欄位，這些記錄仍可能推斷出密碼、聊天等輸入內容。不能保證所有敏感輸入都能被識別。\n\n記錄僅在本機加密儲存，不上傳；長期保留，直到你手動刪除。可在「設定 → 資料」或選單列右鍵選單查看狀態並停止記錄。尊重系統安全輸入，受保護或斷線期間會有缺漏。原有歷史不能補回順序。";
 "replay.consent.enable" = "開啟本機記錄";
-"replay.delete.title" = "永久刪除全部回放明細？";
+"replay.delete.title" = "永久刪除所有鍵盤重播記錄？";
 "replay.delete.body" = "同時停止記錄。彙總統計、應用程式統計和鍵盤累計成長不會刪除；這些日期的真實順序將無法復原。";
 "replay.delete.failed" = "部分回放明細未能刪除，請檢查本機檔案存取權限。";
 "replay.loading" = "正在讀取本機回放明細…";
@@ -650,7 +647,7 @@
 "trackpad.stardust" = "星塵";
 "trackpad.brush" = "觸控板畫筆";
 "trackpad.clear" = "清空";
-"trackpad.preview.help" = "實時預覽。點擊畫布隱藏指針，Esc 退出。後臺記錄需單獨開啟。";
+"trackpad.preview.help" = "按一下畫布隱藏指標，按 Esc 恢復。可在「設定 → 資料」管理記錄。";
 "trackpad.ready" = "預覽已停止 · 未錄製";
 "trackpad.waiting" = "等待真實觸點 · 已啟動裝置不代表已收到資料";
 "trackpad.unavailable" = "目前裝置無法開啟觸控板預覽，基本鍵鼠統計不受影響。";
@@ -664,9 +661,9 @@
 
 "trackpad.replay" = "回放當天";
 
-"trackpad.delete" = "刪除記錄";
+"trackpad.delete" = "刪除觸控式軌跡板記錄…";
 
-"trackpad.delete.confirm" = "刪除全部觸控板記錄？聚合統計保留。";
+"trackpad.delete.confirm" = "刪除所有觸控式軌跡板記錄？";
 
 "trackpad.cancel" = "取消";
 
@@ -676,6 +673,32 @@
 
 "trackpad.replay.empty" = "該日期无可讀取記錄。";
 
-"trackpad.consent" = "記錄跨 App 的指尖位置、順序、源時間和相对壓力？僅本機加密保存直到手動刪除，不上傳、不加入統計導出。關閉窗口不會停止記錄。";
+"trackpad.consent" = "允許 Helper 記錄跨 App 的指尖位置、順序、來源時間和相對壓力？記錄僅在這部 Mac 加密儲存，直到手動刪除，不上傳，不加入統計匯出。若要在結束 Keytide 後繼續，請在一般設定中允許背景記錄。";
 
-"trackpad.record.always" = "全天背景記錄";
+"trackpad.record.always" = "觸控式軌跡板重播記錄";
+
+"trackpad.helper.unavailable" = "觸控板 Helper 未連線。請使用已更新 Helper 的新版 Keytide。";
+"trackpad.helper.recording" = "Helper 正在這部 Mac 記錄。";
+"trackpad.helper.suspended" = "Mac 睡眠或使用者工作階段未啟用時暫停記錄。";
+"settings.appLogin.help" = "登入時開啟 Keytide 選單列 App。";
+"backgroundInput.title" = "結束後繼續統計";
+"backgroundInput.help" = "完成設定後，結束 Keytide 仍會統計鍵盤和滑鼠活動，下次登入時自動恢復。只有個別開啟的重播會繼續記錄明細。";
+"backgroundInput.error" = "Helper 無法完成要求。請確認 Keytide 已連線至 Helper 後再試一次。";
+"monitoring.helperVersionMismatch" = "已安裝的 Helper 與目前版本的 Keytide 不相容。";
+"backgroundInput.waiting" = "Helper 連線並開始擷取後生效。";
+"backgroundInput.savingOff" = "正在等待 Helper 套用關閉設定。";
+"backgroundInput.syncFailed" = "已儲存選擇，Helper 無法套用。重新連線或切換開關可重試。";
+"welcome.replay.title" = "儲存重播記錄";
+"welcome.replay.body" = "選用。選擇 Keytide 可在你使用其他 App 時記錄哪些明細。";
+"welcome.replay.keyboard" = "鍵盤重播記錄";
+"welcome.replay.keyboardHelp" = "儲存實際按鍵順序與按下、放開的時間。這些記錄可能用來推斷密碼和私人訊息。";
+"welcome.replay.trackpadHelp" = "儲存指尖在觸控式軌跡板表面的移動路徑、時間和相對壓力。";
+"welcome.replay.storage" = "記錄只會在這部 Mac 加密儲存，直到你手動刪除。Keytide 不會上傳記錄。若已開啟「結束後繼續統計」，結束 App 後仍會繼續記錄。可在「設定 → 資料」管理。";
+"welcome.replay.enable" = "開啟所選記錄";
+"welcome.replay.skip" = "暫時略過";
+"welcome.replay.applying" = "正在開始記錄…";
+"welcome.replay.failed" = "有選取的記錄無法開始。可以重試，或完成引導後到「設定 → 資料」再試。";
+"trackpad.record.help" = "跨 App 儲存觸控式軌跡板的路徑、時間和相對壓力，只在這部 Mac 加密儲存至手動刪除。開啟「結束後繼續統計」時，結束 Keytide 後仍會繼續記錄。";
+"trackpad.record.starting" = "正在套用記錄設定…";
+"trackpad.record.off" = "記錄已關閉";
+"trackpad.delete.help" = "這會停止觸控式軌跡板記錄，並永久刪除已儲存的路徑。";

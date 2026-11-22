@@ -514,6 +514,7 @@ final class KeyboardVisualizationViewController: NSViewController {
     }
 
     private func releaseResourcesForClosedWindow() {
+        StatsManager.shared.discardPresentationHistory()
         resourcesReleased = true
         content.cancelGestures()
         content.reset()

@@ -134,6 +134,7 @@ final class KeyReplayStore {
         }
     }
 
+#if !KEYTIDE_HELPER
     /// Snapshot file lengths on the writer queue; decryption runs on the reader queue.
     func makeReader(day: String, cancellation: KeyReplayCancellation = KeyReplayCancellation()) throws -> KeyReplayStream {
         guard Self.valid(day) else { throw Failure.invalidDay }
@@ -149,6 +150,8 @@ final class KeyReplayStore {
         }
         return KeyReplayStream(files: snapshots, key: key, day: day, cancellation: cancellation)
     }
+
+#endif
 
     private static func valid(_ day: String) -> Bool {
         day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
@@ -166,6 +169,7 @@ final class KeyReplayStore {
     }
 }
 
+#if !KEYTIDE_HELPER
 /// Cancellation is synchronous; all reader state and I/O stays on its own serial queue.
 final class KeyReplayCancellation {
     private let lock = NSLock()
@@ -372,6 +376,8 @@ final class KeyReplayStream {
     }
 }
 
+#endif
+
 /// Pure ingress policy and timestamp conversion. No text, app identity, network,
 /// defaults or global listener. A new session is needed after a capture gap.
 struct KeyReplaySession {
@@ -397,6 +403,7 @@ struct KeyReplaySession {
 
 /// Built-in, explicitly synthetic replay. No manager, defaults, file or recorder
 /// dependency. It uses the same event and presentation types as real playback.
+#if !KEYTIDE_HELPER
 struct KeyReplayExample {
     let presentation: GrowthKeyboardPresentation
     let recordedDayKey: String
@@ -440,3 +447,4 @@ struct KeyReplayExample {
             day: KeyReplayDay(entries: entries, hasUnreadableChunks: false))
     }
 }
+#endif

@@ -32,7 +32,7 @@ real-device matrix passes. See THIRD_PARTY_NOTICES.md for ABI attribution.
 
 ## Isolated encrypted replay regression
 
-Compile `Keytide/TrackpadStudioView.swift` together with
+Compile `KeytideHelper/TrackpadRecording.swift` together with
 `scripts/trackpad-probe/replay-tests/main.swift` using the macOS SDK and run the
 result. It creates and deletes its own temporary encrypted fixtures with an
 in-memory key. It does not open a device, production App, Keychain, or user data.

@@ -5,7 +5,9 @@ enum HelperLocations {
     static let helperBundleId = "com.xuanlprk.KeyTide.helper"
     static let machServiceName = "com.xuanlprk.KeyTide.helper"
     static let launchAgentLabel = "com.xuanlprk.KeyTide.helper"
-    static let interfaceVersion = 2
+    static let interfaceVersion = 4
+    static let trackpadControlVersion = 3
+    static let inputOwnershipVersion = 4
 
     static var installDir: URL {
         let base = try! FileManager.default.url(
@@ -28,5 +30,13 @@ enum HelperLocations {
     static var launchAgentPlistURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents/\(launchAgentLabel).plist")
+    }
+
+    static var trackpadBackgroundMarker: URL {
+        installDir.appendingPathComponent("TrackpadRecordingEnabled.v1")
+    }
+
+    static var inputBackgroundMarker: URL {
+        installDir.appendingPathComponent("BackgroundInputAllowed.v1")
     }
 }

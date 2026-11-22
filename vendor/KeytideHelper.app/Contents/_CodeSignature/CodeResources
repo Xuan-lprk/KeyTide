@@ -10,11 +10,15 @@
 		</data>
 		<key>Resources/Assets.car</key>
 		<data>
-		rIGKMjGhjWRSrVXomKiW+9KvLGc=
+		6vHSPgMRGCcHIINpr4ftoCsVn0M=
 		</data>
 		<key>Resources/Info.plist</key>
 		<data>
-		wRYLz+n8/ij2l7t8aQGgQ7ccmFY=
+		x2/63PyA2Gu4i7Je0HGNN0YiAf4=
+		</data>
+		<key>Resources/Keytide.icns</key>
+		<data>
+		EQTnB9BaWC3403BBUEoQAnz8qMk=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -30,14 +34,21 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			G34V/AyNozWh/oLpP7GHlgzvreM8SyEHW2P8TSn8yVI=
+			QJK9sYMHIJnZ8wzBoGSYTiqgNHG3GALh1zHrW0+C6s8=
 			</data>
 		</dict>
 		<key>Resources/Info.plist</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			OrcgooSoBQIeIP2rU0nuKchvIEIxiU1kx0e80wTcXP4=
+			AlTCJYLu/vswbAk8aFIZmbFW1T2tPsxwld5EkkfTkzc=
+			</data>
+		</dict>
+		<key>Resources/Keytide.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			deLsZ3pcFMyU/TsWd6TOM36dFLkgOH5Vfm42XSUkc6s=
 			</data>
 		</dict>
 	</dict>

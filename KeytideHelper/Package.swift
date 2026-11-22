@@ -24,8 +24,27 @@ let package = Package(
                 "HelperProtocols.swift",
                 "HelperLocations.swift",
                 "HelperXPCListener.swift",
-                "HelperIdleSupervisor.swift"
-            ]
+                "HelperIdleSupervisor.swift",
+                "TrackpadRecording.swift",
+                "InputEventSemantics.swift",
+                "HelperTrackpadService.swift",
+                "AppStats.swift",
+                "AppActivityTracker.swift",
+                "StatsModels.swift",
+                "StatsManager.swift",
+                "InteractionProfile.swift",
+                "PhysicalKeyMapping.swift",
+                "KeyboardLayout.swift",
+                "KeyboardTrackingPeriod.swift",
+                "KeyboardUsageProgress.swift",
+                "CumulativeKeyboardSnapshot.swift",
+                "GrowthKeyboardPresentation.swift",
+                "KeyReplayStore.swift",
+                "InputEventAggregator.swift",
+                "HelperKeyReplayWriter.swift",
+                "HelperInputService.swift"
+            ],
+            swiftSettings: [.define("KEYTIDE_HELPER")]
         ),
         .testTarget(
             name: "KeytideHelperTests",

@@ -67,6 +67,44 @@ class StatsManager {
         let sendThresholdNotification: (ThresholdMetric, Int, Int) -> Void
     }
 
+    struct CaptureSnapshot: Codable {
+        let current: DailyStats
+        let history: [String: DailyStats]?
+        let kps: Int
+        let cps: Int
+        let sampledAt: TimeInterval
+        let calibrationFactor: Double
+    }
+
+    /// Decodes the live fields without expanding the potentially large history object.
+    /// The Helper's existing CaptureSnapshot wire format is unchanged.
+    struct CaptureUpdate: Decodable {
+        let current: DailyStats
+        let kps: Int
+        let cps: Int
+        let sampledAt: TimeInterval
+        let calibrationFactor: Double
+        let containsHistory: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case current, history, kps, cps, sampledAt, calibrationFactor
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            current = try values.decode(DailyStats.self, forKey: .current)
+            kps = try values.decode(Int.self, forKey: .kps)
+            cps = try values.decode(Int.self, forKey: .cps)
+            sampledAt = try values.decode(TimeInterval.self, forKey: .sampledAt)
+            calibrationFactor = try values.decode(Double.self, forKey: .calibrationFactor)
+            containsHistory = try values.contains(.history) && !values.decodeNil(forKey: .history)
+        }
+    }
+
+    private struct CaptureHistory: Decodable {
+        let history: [String: DailyStats]
+    }
+
     enum ImportMode {
         case overwrite
         case merge
@@ -78,6 +116,10 @@ class StatsManager {
     }
     
     private let environment: Environment
+    private let ownsCaptureStore: Bool
+    private let batchesCaptureUpdates: Bool
+    private var historyNeedsSave = true
+    private var receivedRates: (kps: Int, cps: Int, at: TimeInterval)?
     private var userDefaults: UserDefaults { environment.userDefaults }
     private let statsKey = "dailyStats"
     private let historyKey = "dailyStatsHistory"
@@ -94,6 +136,8 @@ class StatsManager {
     private let mouseDistanceCalibrationFactorKey = "mouseDistanceCalibrationFactor"
     private let dateFormatter: DateFormatter
     private var history: [String: DailyStats] = [:]
+    private var captureHistoryPayload: Data?
+    private var presentationHistory: [String: DailyStats]?
     private var saveTimer: Timer?
     private var statsUpdateTimer: Timer?
     private var midnightCheckTimer: Timer?
@@ -125,7 +169,27 @@ class StatsManager {
     private var inputRateStartTime: Date?
     private(set) var currentInputRatePerSecond: Double = 0
     private(set) var currentIconTintColor: NSColor?
-    var menuBarUpdateHandler: (() -> Void)?
+    // Shared with input callbacks. The callback itself is delivered on main.
+    private let menuBarPresentationLock = NSLock()
+    private var menuBarHandler: (() -> Void)?
+    private var menuBarUpdateQueued = false
+    var menuBarUpdateHandler: (() -> Void)? {
+        get {
+            menuBarPresentationLock.lock()
+            defer { menuBarPresentationLock.unlock() }
+            return menuBarHandler
+        }
+        set {
+            precondition(Thread.isMainThread)
+            menuBarPresentationLock.lock()
+            let visibilityChanged = (menuBarHandler == nil) != (newValue == nil)
+            menuBarHandler = newValue
+            menuBarPresentationLock.unlock()
+            if visibilityChanged && enableDynamicIconColor {
+                refreshInputRateTracking()
+            }
+        }
+    }
     private var statsUpdateHandlers: [UUID: () -> Void] = [:]
 
     private var cachedMouseDistanceCalibrationFactor: Double = 1.0
@@ -213,10 +277,7 @@ class StatsManager {
             if enableDynamicIconColor {
                 let applyChanges = { [weak self] in
                     guard let self = self else { return }
-                    self.stopInputRateTracking()
-                    self.resetInputRateBuckets()
-                    self.startInputRateTracking()
-                    self.updateCurrentInputRate()
+                    self.refreshInputRateTracking()
                 }
                 if Thread.isMainThread {
                     applyChanges()
@@ -231,15 +292,8 @@ class StatsManager {
     var enableDynamicIconColor: Bool {
         didSet {
             userDefaults.set(enableDynamicIconColor, forKey: enableDynamicIconColorKey)
-            let applyChanges = { [weak self] in
-                guard let self = self else { return }
-                if self.enableDynamicIconColor {
-                    self.resetInputRateBuckets()
-                    self.startInputRateTracking()
-                } else {
-                    self.stopInputRateTracking()
-                }
-                self.updateCurrentInputRate()
+            let applyChanges: () -> Void = { [weak self] in
+                self?.refreshInputRateTracking()
             }
             if Thread.isMainThread {
                 applyChanges()
@@ -281,8 +335,13 @@ class StatsManager {
     /// 上次鼠标位置（用于计算移动距离）
     var lastMousePosition: NSPoint?
     
-    init(environment: Environment) {
+    init(environment: Environment,
+         ownsCaptureStore: Bool = true,
+         batchesCaptureUpdates: Bool = false,
+         usesDynamicMenuBarIconColor: Bool = true) {
         self.environment = environment
+        self.ownsCaptureStore = ownsCaptureStore
+        self.batchesCaptureUpdates = batchesCaptureUpdates
         let defaults = environment.userDefaults
         dateFormatter = environment.makeDateKeyFormatter()
 
@@ -294,7 +353,8 @@ class StatsManager {
         notificationsEnabled = defaults.object(forKey: notificationsEnabledKey) as? Bool ?? false
         keyPressNotifyThreshold = defaults.object(forKey: keyPressNotifyThresholdKey) as? Int ?? 1000
         clickNotifyThreshold = defaults.object(forKey: clickNotifyThresholdKey) as? Int ?? 1000
-        enableDynamicIconColor = defaults.object(forKey: enableDynamicIconColorKey) as? Bool ?? false
+        enableDynamicIconColor = usesDynamicMenuBarIconColor
+            && (defaults.object(forKey: enableDynamicIconColorKey) as? Bool ?? false)
         let storedCalibration = defaults.double(forKey: mouseDistanceCalibrationFactorKey)
         cachedMouseDistanceCalibrationFactor = storedCalibration > 0 ? storedCalibration : 1.0
 
@@ -302,29 +362,30 @@ class StatsManager {
         let calendar = environment.calendar()
         let today = calendar.startOfDay(for: environment.now())
         currentStats = DailyStats(date: today)
-        history = normalizedHistory(loadHistory())
+        if ownsCaptureStore {
+            history = normalizedHistory(loadHistory())
+        }
 
         // 优先加载 dailyStats；如果缺失或不是今天，回退到 history 里的今天数据。
         let loadedCurrent = loadStats().map(normalizedDailyStats)
+        if batchesCaptureUpdates, let loadedCurrent, !calendar.isDate(loadedCurrent.date, inSameDayAs: today) {
+            history[dateFormatter.string(from: loadedCurrent.date)] = loadedCurrent
+        }
         if let savedStats = loadedCurrent, calendar.isDate(savedStats.date, inSameDayAs: today) {
             currentStats = savedStats
         } else {
             let todayKey = dateFormatter.string(from: today)
-            if let todayHistory = history[todayKey] {
-                currentStats = normalizedDailyStats(todayHistory)
-            }
+            // Recover today's totals from older installations without retaining their
+            // decoded history in a menu-only process.
+            let todayHistory = ownsCaptureStore ? history[todayKey] : normalizedHistory(loadHistory())[todayKey]
+            if let todayHistory { currentStats = normalizedDailyStats(todayHistory) }
         }
 
         updateNotificationBaselines()
         
         isReadyForUpdates = true
         saveStats()
-        if environment.schedulesAutomaticWork, enableDynamicIconColor {
-            resetInputRateBuckets()
-            startInputRateTracking()
-            updateCurrentInputRate()
-        }
-        if environment.schedulesAutomaticWork {
+        if environment.schedulesAutomaticWork && ownsCaptureStore {
             setupMidnightReset()
 
         }
@@ -596,10 +657,10 @@ class StatsManager {
 
     // MARK: - 输入速率
 
-    func registerInputEvent() {
-        guard enableDynamicIconColor else { return }
+    private func registerInputEvent(count: Int = 1) {
+        guard count > 0, enableDynamicIconColor, menuBarUpdateHandler != nil else { return }
         inputRateLock.lock()
-        inputRateBuckets[inputRateBucketIndex] += 1
+        inputRateBuckets[inputRateBucketIndex] = safeAdd(inputRateBuckets[inputRateBucketIndex], count)
         inputRateLock.unlock()
     }
 
@@ -661,6 +722,12 @@ class StatsManager {
     func currentRatesSnapshot() -> (currentKPS: Int, currentCPS: Int, peakKPS: Int, peakCPS: Int) {
         let cutoff = ProcessInfo.processInfo.systemUptime - 1.0
         statsStateLock.lock()
+        if !ownsCaptureStore {
+            let fresh = receivedRates.flatMap { $0.at > cutoff ? $0 : nil }
+            let values = (fresh?.kps ?? 0, fresh?.cps ?? 0, currentStats.peakKPS, currentStats.peakCPS)
+            statsStateLock.unlock()
+            return values
+        }
         pruneKeyTimestamps(before: cutoff)
         pruneClickTimestamps(before: cutoff)
         let kps = recentKeyTimestamps.count - keyTimestampsHead
@@ -709,17 +776,17 @@ class StatsManager {
         inputRateLock.unlock()
     }
 
-    private func startInputRateTracking() {
-        guard environment.schedulesAutomaticWork else { return }
-        if !Thread.isMainThread {
-            DispatchQueue.main.async { [weak self] in
-                self?.startInputRateTracking()
-            }
+    private func refreshInputRateTracking() {
+        stopInputRateTracking()
+        currentInputRatePerSecond = 0
+        currentIconTintColor = nil
+        guard environment.schedulesAutomaticWork, enableDynamicIconColor, menuBarUpdateHandler != nil else {
+            notifyMenuBarUpdate()
             return
         }
 
+        resetInputRateBuckets()
         inputRateStartTime = environment.now()
-        inputRateTimer?.invalidate()
         inputRateTimer = Timer.scheduledTimer(withTimeInterval: inputRateBucketInterval, repeats: true) { [weak self] _ in
             self?.advanceInputRateBucket()
         }
@@ -744,7 +811,7 @@ class StatsManager {
 
     private func updateCurrentInputRate() {
         inputRateLock.lock()
-        let totalEvents = inputRateBuckets.reduce(0, +)
+        let totalEvents = inputRateBuckets.reduce(0, safeAdd)
         inputRateLock.unlock()
         
         var effectiveWindow = inputRateWindowSeconds
@@ -849,6 +916,7 @@ class StatsManager {
     // MARK: - 数据持久化
     
     private func saveStats() {
+        guard ownsCaptureStore else { return }
         statsStateLock.lock()
         let statsSnapshot = currentStats
         let calendar = environment.calendar()
@@ -857,15 +925,71 @@ class StatsManager {
         var normalizedStats = statsSnapshot
         normalizedStats.date = normalizedDate
         history[key] = normalizedStats
-        let historySnapshot = history
+        let historySnapshot = (!batchesCaptureUpdates || historyNeedsSave) ? history : nil
+        historyNeedsSave = false
         statsStateLock.unlock()
 
         if let encoded = try? JSONEncoder().encode(statsSnapshot) {
             userDefaults.set(encoded, forKey: statsKey)
         }
-        if let encoded = try? JSONEncoder().encode(historySnapshot) {
+        if let historySnapshot, let encoded = try? JSONEncoder().encode(historySnapshot) {
             userDefaults.set(encoded, forKey: historyKey)
         }
+    }
+
+    func captureSnapshot(includingHistory: Bool) -> CaptureSnapshot {
+        let rates = currentRatesSnapshot()
+        statsStateLock.lock(); defer { statsStateLock.unlock() }
+        return CaptureSnapshot(current: currentStats, history: includingHistory ? history : nil,
+                               kps: rates.currentKPS, cps: rates.currentCPS,
+                               sampledAt: ProcessInfo.processInfo.systemUptime,
+                               calibrationFactor: mouseDistanceCalibrationFactor)
+    }
+
+    func receiveCaptureUpdate(_ snapshot: CaptureUpdate, historyPayload: Data?) {
+        guard !ownsCaptureStore else { return }
+        statsStateLock.lock()
+        if let historyPayload {
+            captureHistoryPayload = historyPayload
+            presentationHistory = nil
+        }
+        let menuCountsChanged = snapshot.current.keyPresses != currentStats.keyPresses
+            || snapshot.current.totalClicks != currentStats.totalClicks
+        if enableDynamicIconColor, menuBarUpdateHandler != nil,
+           environment.calendar().isDate(snapshot.current.date, inSameDayAs: currentStats.date) {
+            let keyDelta = snapshot.current.keyPresses - currentStats.keyPresses
+            let clickDelta = snapshot.current.totalClicks - currentStats.totalClicks
+            if keyDelta >= 0, clickDelta >= 0 {
+                registerInputEvent(count: safeAdd(keyDelta, clickDelta))
+            }
+        }
+        currentStats = snapshot.current
+        receivedRates = (max(0, snapshot.kps), max(0, snapshot.cps), snapshot.sampledAt)
+        cachedMouseDistanceCalibrationFactor = snapshot.calibrationFactor
+        statsStateLock.unlock()
+        if menuCountsChanged { notifyMenuBarUpdate() }
+        notifyStatsUpdate()
+    }
+
+    /// Called from UI lifecycle callbacks. Keep the authoritative encoded snapshot
+    /// so reopen, export, reset and import never fall back to older on-disk totals.
+    func discardPresentationHistory() {
+        guard !ownsCaptureStore else { return }
+        statsStateLock.lock()
+        presentationHistory = nil
+        statsStateLock.unlock()
+    }
+
+    /// Call with statsStateLock held.
+    private func readHistoryLocked() -> [String: DailyStats] {
+        if ownsCaptureStore { return history }
+        if let presentationHistory { return presentationHistory }
+        let received = captureHistoryPayload.flatMap {
+            try? JSONDecoder().decode(CaptureHistory.self, from: $0).history
+        }
+        let decoded = received ?? normalizedHistory(loadHistory())
+        presentationHistory = decoded
+        return decoded
     }
 
     private func loadStats() -> DailyStats? {
@@ -909,6 +1033,8 @@ class StatsManager {
 
     struct PreparedImport {
         fileprivate let payload: ExportPayload
+
+        func encodedData() throws -> Data { try ExportSnapshot(payload: payload).encodedData() }
     }
 
     private enum ImportError: LocalizedError {
@@ -934,7 +1060,7 @@ class StatsManager {
 
     func exportSnapshot() -> ExportSnapshot {
         statsStateLock.lock()
-        var exportHistory = history
+        var exportHistory = readHistoryLocked()
         var current = currentStats
         statsStateLock.unlock()
         let normalizedDate = environment.calendar().startOfDay(for: current.date)
@@ -978,6 +1104,7 @@ class StatsManager {
     }
 
     func applyPreparedImport(_ prepared: PreparedImport, mode: ImportMode = .overwrite) {
+        guard ownsCaptureStore else { return }
         applyImportedPayload(prepared.payload, mode: mode)
     }
 
@@ -1006,6 +1133,7 @@ class StatsManager {
         }
 
         history = resolvedHistory
+        historyNeedsSave = true
         currentStats = resolvedHistory[todayKey] ?? DailyStats(date: today)
         recentKeyTimestamps.removeAll()
         recentClickTimestamps.removeAll()
@@ -1196,7 +1324,7 @@ class StatsManager {
     }
 
     private func scheduleSave() {
-        guard environment.schedulesAutomaticWork else { return }
+        guard ownsCaptureStore, environment.schedulesAutomaticWork else { return }
         let schedule = { [weak self] in
             guard let self = self, self.saveTimer == nil else { return }
             self.saveTimer = Timer.scheduledTimer(withTimeInterval: self.saveInterval, repeats: false) { [weak self] _ in
@@ -1225,12 +1353,33 @@ class StatsManager {
     }
 
     private func notifyMenuBarUpdate() {
+        menuBarPresentationLock.lock()
+        guard menuBarHandler != nil, !menuBarUpdateQueued else {
+            menuBarPresentationLock.unlock()
+            return
+        }
+        menuBarUpdateQueued = true
+        menuBarPresentationLock.unlock()
         DispatchQueue.main.async { [weak self] in
-            self?.menuBarUpdateHandler?()
+            guard let self else { return }
+            self.menuBarPresentationLock.lock()
+            self.menuBarUpdateQueued = false
+            let handler = self.menuBarHandler
+            self.menuBarPresentationLock.unlock()
+            handler?()
         }
     }
 
     private func notifyStatsUpdate() {
+        if batchesCaptureUpdates {
+            scheduleDebouncedStatsUpdate()
+            return
+        }
+        deliverStatsUpdate()
+    }
+
+    private func deliverStatsUpdate() {
+        if Thread.isMainThread && statsUpdateHandlers.isEmpty { return }
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             for handler in Array(self.statsUpdateHandlers.values) {
@@ -1241,16 +1390,24 @@ class StatsManager {
 
     private func scheduleDebouncedStatsUpdate() {
         guard environment.schedulesAutomaticWork else { return }
-        DispatchQueue.main.async { [weak self] in
+        let schedule = { [weak self] in
             guard let self, !self.statsUpdateHandlers.isEmpty, self.statsUpdateTimer == nil else { return }
             // A bounded one-shot refresh keeps its original deadline while
             // movement/scrolling continues; new samples share the same timer.
             self.statsUpdateTimer = Timer.scheduledTimer(withTimeInterval: self.statsUpdateDebounceInterval, repeats: false) { [weak self] _ in
                 self?.statsUpdateTimer = nil
-                self?.notifyStatsUpdate()
+                self?.deliverStatsUpdate()
             }
             if let timer = self.statsUpdateTimer { RunLoop.main.add(timer, forMode: .common) }
         }
+        if Thread.isMainThread { schedule() }
+        else { DispatchQueue.main.async(execute: schedule) }
+    }
+
+    func persistCaptureState() {
+        guard saveTimer != nil else { return }
+        saveTimer?.invalidate(); saveTimer = nil
+        saveStats()
     }
 
     func flushPendingSave() {
@@ -1331,6 +1488,7 @@ class StatsManager {
     }
     
     func resetStats() {
+        guard ownsCaptureStore else { return }
         statsStateLock.lock()
         resetStatsLocked(for: environment.now())
         statsStateLock.unlock()
@@ -1363,6 +1521,7 @@ class StatsManager {
             var previousDaySnapshot = currentStats
             previousDaySnapshot.date = calendar.startOfDay(for: previousDaySnapshot.date)
             history[dateFormatter.string(from: previousDaySnapshot.date)] = previousDaySnapshot
+            historyNeedsSave = true
         }
         currentStats = DailyStats(date: date)
         recentKeyTimestamps.removeAll()
@@ -1495,20 +1654,22 @@ extension StatsManager {
     }
 
     func historyTrendSeries(range: HistoryRange, metric: HistoryMetric) -> HistoryTrendSeries {
-        HistoryTrendSeries(display: makeHistorySeries(dates: datesInRange(range), metric: metric,
-            history: localHistorySnapshot()))
-    }
-
-    private func makeHistorySeries(
-        dates: [Date],
-        metric: HistoryMetric,
-        history: [String: DailyStats]
-    ) -> [HistoryPoint] {
-        return dates.map { date in
+        let dates = datesInRange(range)
+        let calendar = environment.calendar()
+        statsStateLock.lock()
+        let current = currentStats
+        let needsArchive = dates.contains { !calendar.isDate($0, inSameDayAs: current.date) }
+        let history = needsArchive ? readHistoryLocked() : [:]
+        statsStateLock.unlock()
+        // These charts read scalar metrics from a short date range. The store
+        // already normalizes date keys, and the current day overrides its saved copy.
+        let points = dates.map { date -> HistoryPoint in
             let key = dateFormatter.string(from: date)
-            let stats = history[key] ?? DailyStats(date: date)
+            let stats = calendar.isDate(date, inSameDayAs: current.date)
+                ? current : (history[key] ?? DailyStats(date: date))
             return (date, metricValue(metric, for: stats))
         }
+        return HistoryTrendSeries(display: points)
     }
     
     func formatHistoryValue(metric: HistoryMetric, value: Double) -> String {
@@ -1604,13 +1765,13 @@ extension StatsManager {
     private func metricValue(_ metric: HistoryMetric, for stats: DailyStats) -> Double {
         switch metric {
         case .keyPresses:
-            return Double(stats.keyPresses)
+            return Double(max(0, stats.keyPresses))
         case .clicks:
             return Double(stats.totalClicks)
         case .mouseDistance:
-            return stats.mouseDistance
+            return stats.mouseDistance.isFinite ? max(0, stats.mouseDistance) : 0
         case .scrollDistance:
-            return stats.scrollDistance
+            return stats.scrollDistance.isFinite ? max(0, stats.scrollDistance) : 0
         }
     }
     
@@ -1707,7 +1868,7 @@ extension StatsManager {
     /// Returns normalized local history, including the unsaved current day exactly once.
     func localHistorySnapshot() -> [String: DailyStats] {
         statsStateLock.lock()
-        var snapshot = history
+        var snapshot = readHistoryLocked()
         let current = currentStats
         statsStateLock.unlock()
         let normalized = normalizedDailyStats(current)
@@ -1812,24 +1973,24 @@ extension StatsManager {
     }
 
     private func appStatsDays(in range: AppStatsRange) -> [DailyStats] {
+        statsStateLock.lock()
+        let history = range == .today ? [:] : readHistoryLocked()
+        let current = currentStats
+        statsStateLock.unlock()
         switch range {
         case .today:
-            return [currentStats]
+            return [current]
         case .week, .month:
-            return appStatsDates(in: range).map { dailyStats(for: $0) }
+            let todayKey = dateFormatter.string(from: current.date)
+            return appStatsDates(in: range).map { date in
+                let key = dateFormatter.string(from: date)
+                return key == todayKey ? current : (history[key] ?? DailyStats(date: date))
+            }
         case .all:
-            let todayKey = dateFormatter.string(from: currentStats.date)
+            let todayKey = dateFormatter.string(from: current.date)
             return history.values.filter { dateFormatter.string(from: $0.date) != todayKey }
-                + [currentStats]
+                + [current]
         }
-    }
-
-    private func dailyStats(for date: Date) -> DailyStats {
-        if environment.calendar().isDate(date, inSameDayAs: currentStats.date) {
-            return currentStats
-        }
-        let key = dateFormatter.string(from: date)
-        return history[key] ?? DailyStats(date: date)
     }
 
     private func appStatsDates(in range: AppStatsRange) -> [Date] {

@@ -335,7 +335,7 @@ class StatsPopoverViewController: NSViewController {
                                           trackingMode: .selectOne,
                                           target: self,
                                           action: #selector(historyControlsChanged))
-        rangeControl.selectedSegment = 0
+        rangeControl.selectedSegment = historySelection.range
         rangeControl.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(rangeControl)
         
@@ -349,7 +349,7 @@ class StatsPopoverViewController: NSViewController {
                                            trackingMode: .selectOne,
                                            target: self,
                                            action: #selector(historyControlsChanged))
-        metricControl.selectedSegment = 0
+        metricControl.selectedSegment = historySelection.metric
         metricControl.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(metricControl)
         
@@ -361,7 +361,7 @@ class StatsPopoverViewController: NSViewController {
                                                trackingMode: .selectOne,
                                                target: self,
                                                action: #selector(historyControlsChanged))
-        chartStyleControl.selectedSegment = 0
+        chartStyleControl.selectedSegment = historySelection.chartStyle
         chartStyleControl.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(chartStyleControl)
         for control in [rangeControl!, metricControl!, chartStyleControl!] {
@@ -816,6 +816,8 @@ class StatsPopoverViewController: NSViewController {
         keyBreakdownDisplayedKeys = newKeys
     }
 
+    var historySelection = MenuHistorySelection()
+
     @objc private func historyControlsChanged() {
         let currentRange = rangeControl.selectedSegment
         let currentMetric = metricControl.selectedSegment
@@ -846,6 +848,7 @@ class StatsPopoverViewController: NSViewController {
                 "style": currentStyle == 0 ? "line" : "bar"
             ])
         }
+        historySelection = .init(range: currentRange, metric: currentMetric, chartStyle: currentStyle)
         lastRangeSegment = currentRange
         lastMetricSegment = currentMetric
         lastChartStyleSegment = currentStyle

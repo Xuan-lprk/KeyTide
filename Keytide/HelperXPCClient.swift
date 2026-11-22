@@ -236,6 +236,70 @@ final class HelperXPCClient {
         }
     }
 
+    func controlTrackpad(_ command: TrackpadControl,
+                         completion: @escaping (TrackpadRecordingStatus?, Bool) -> Void) {
+        lock.lock()
+        let c = connection, generation = connectionGeneration
+        let supported: Bool
+        if case .connected(let version, _) = _state { supported = version >= HelperLocations.inputOwnershipVersion }
+        else { supported = false }
+        lock.unlock()
+        guard supported, let c else { completion(nil, false); return }
+        let request = UUID()
+        let once = NSLock()
+        var completed = false
+        let finish: (TrackpadRecordingStatus?, Bool) -> Void = { [weak self] status, ok in
+            once.lock()
+            guard !completed else { once.unlock(); return }
+            completed = true
+            once.unlock()
+            self?.removeRequest(request)
+            completion(status, ok)
+        }
+        guard trackRequest(request, generation: generation, cancel: { _ in finish(nil, false) }) else {
+            finish(nil, false); return
+        }
+        let proxy = c.remoteObjectProxyWithErrorHandler { _ in finish(nil, false) } as? KeytideHelperProtocol
+        guard let proxy else { finish(nil, false); return }
+        proxy.controlTrackpad(command.rawValue) { [weak self] raw, ok in
+            guard let self else { finish(nil, false); return }
+            self.lock.lock(); let current = self.connectionGeneration == generation; self.lock.unlock()
+            finish(current ? TrackpadRecordingStatus(rawValue: raw) : nil, current && ok)
+        }
+    }
+
+    func controlInput(_ command: InputControl, argument: Data = Data(),
+                      completion: @escaping (Data?, Bool) -> Void) {
+        lock.lock()
+        let c = connection, generation = connectionGeneration
+        let supported: Bool
+        if case .connected(let version, _) = _state { supported = version >= HelperLocations.inputOwnershipVersion }
+        else { supported = false }
+        lock.unlock()
+        guard supported, let c else { completion(nil, false); return }
+        let request = UUID()
+        let once = NSLock()
+        var completed = false
+        let finish: (Data?, Bool) -> Void = { [weak self] data, ok in
+            once.lock()
+            guard !completed else { once.unlock(); return }
+            completed = true
+            once.unlock()
+            self?.removeRequest(request)
+            completion(data, ok)
+        }
+        guard trackRequest(request, generation: generation, cancel: { _ in finish(nil, false) }) else {
+            finish(nil, false); return
+        }
+        let proxy = c.remoteObjectProxyWithErrorHandler { _ in finish(nil, false) } as? KeytideHelperProtocol
+        guard let proxy else { finish(nil, false); return }
+        proxy.controlInput(command.rawValue, argument: argument) { [weak self] data, ok in
+            guard let self else { finish(nil, false); return }
+            self.lock.lock(); let current = self.connectionGeneration == generation; self.lock.unlock()
+            finish(current ? data : nil, current && ok)
+        }
+    }
+
     /// 让 helper 主动调一次 `AXIsProcessTrustedWithOptions(prompt: true)`，把自己注册进
     /// 系统设置的辅助功能列表。completion 回调发生在 XPC 队列，调用方自行切主队列。
     func promptAccessibility(completion: @escaping (Bool) -> Void) {
@@ -329,6 +393,13 @@ final class HelperXPCClient {
         lock.lock(); pendingRequests.removeValue(forKey: id); lock.unlock()
     }
 
+    func isCurrent(_ candidate: NSXPCConnection) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard case .connected(let version, _) = _state,
+              version >= HelperLocations.inputOwnershipVersion else { return false }
+        return connection === candidate
+    }
+
     private func withProxy<T>(_ fn: (KeytideHelperProtocol) -> T,
                               fallback: () -> T) -> T {
         lock.lock()
@@ -364,4 +435,118 @@ final class HelperXPCClient {
         if case .disconnected(let reason) = state { cancellations.forEach { $0(reason) } }
         return true
     }
+}
+
+/// App-side settings for the authenticated capture service. No collection or
+/// statistics writes run here.
+final class BackgroundInputController {
+    static let shared = BackgroundInputController()
+    static let didChange = Notification.Name("Keytide.backgroundInputChanged")
+    private let client = HelperXPCClient.shared
+    private var monitoringObserver: NSObjectProtocol?
+    private var status: BackgroundInputStatus?
+    private var synchronizing = false
+    private var syncAgain = false
+    private var failed = false
+
+    var isEnabled: Bool { BackgroundInputPreference.isEnabled(in: .standard) }
+    var statusMessage: String? {
+        if failed { return "backgroundInput.syncFailed" }
+        if !isEnabled, status?.allowed == true { return "backgroundInput.savingOff" }
+        if isEnabled, status?.allowed != true { return "backgroundInput.waiting" }
+        return nil
+    }
+
+    private var canSynchronize: Bool {
+        if case .connected(let version, _) = client.state {
+            return version >= HelperLocations.inputOwnershipVersion
+        }
+        return false
+    }
+
+    func start() {
+        guard monitoringObserver == nil else { return }
+        monitoringObserver = NotificationCenter.default.addObserver(forName: MonitoringStatus.didChange,
+            object: nil, queue: .main) { [weak self] _ in self?.refresh() }
+        client.addStateObserver { [weak self] state in
+            DispatchQueue.main.async {
+                guard let self, self.client.state == state else { return }
+                if case .connected = state {
+                    self.updateAttribution(StatsManager.shared.appStatsEnabled)
+                    self.updateThresholdPreferences()
+                    self.refresh()
+                } else {
+                    self.failed = false
+                    if self.isEnabled { self.status = nil }
+                    self.publish()
+                }
+            }
+        }
+    }
+
+    private func refresh() {
+        guard canSynchronize else { return }
+        if synchronizing { syncAgain = true; return }
+        synchronizing = true
+        request(.backgroundStatus) { [weak self] data, ok in
+            guard let self else { return }
+            guard ok, let data, let current = try? JSONDecoder().decode(BackgroundInputStatus.self, from: data) else {
+                self.finishSync(ok: false)
+                return
+            }
+            self.status = current
+            let requested = self.isEnabled
+            // A choice made in Welcome or while macOS permissions are pending
+            // takes effect once monitoring succeeds.
+            guard current.allowed != requested, current.listening || !requested else {
+                self.finishSync(ok: true)
+                return
+            }
+            self.request(requested ? .enableBackground : .disableBackground) { [weak self] data, ok in
+                guard let self else { return }
+                if let data, let applied = try? JSONDecoder().decode(BackgroundInputStatus.self, from: data) {
+                    self.status = applied
+                }
+                self.finishSync(ok: ok)
+            }
+        }
+    }
+
+    func setAllowed(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: BackgroundInputPreference.requestedKey)
+        failed = false
+        publish()
+        refresh()
+    }
+
+    private func finishSync(ok: Bool) {
+        synchronizing = false
+        failed = !ok && canSynchronize
+        if !canSynchronize && isEnabled { status = nil }
+        let needsRefresh = syncAgain
+        syncAgain = false
+        publish()
+        if needsRefresh { refresh() }
+    }
+
+    func updateAttribution(_ enabled: Bool) {
+        guard let data = try? JSONEncoder().encode(enabled) else { return }
+        request(.updateAttribution, data: data) { _, _ in }
+    }
+
+    func updateThresholdPreferences() {
+        let stats = StatsManager.shared
+        let preferences = InputThresholdPreferences(enabled: stats.notificationsEnabled,
+            keyPresses: stats.keyPressNotifyThreshold, clicks: stats.clickNotifyThreshold)
+        guard let data = try? JSONEncoder().encode(preferences) else { return }
+        request(.updateThresholdPreferences, data: data) { _, _ in }
+    }
+
+    func request(_ command: InputControl, data: Data = Data(), completion: @escaping (Data?, Bool) -> Void) {
+        client.controlInput(command, argument: data) { result, ok in
+            DispatchQueue.main.async { completion(result, ok) }
+        }
+    }
+
+    private func publish() { NotificationCenter.default.post(name: Self.didChange, object: self) }
 }

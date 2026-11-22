@@ -170,7 +170,7 @@ macOS input events
   - SwiftPM 测试不编译该文件，而是通过 `StatsManager.Environment` 创建隔离实例。
 - `Keytide/MenuBarController.swift`
   - 管理 `NSStatusItem`、`NSPopover`、右键菜单和菜单栏更新。
-  - 当前菜单栏视图已经使用 `NSHostingView` 嵌入 SwiftUI，但 shell 仍为 AppKit。
+  - 常驻菜单栏项由单个 AppKit 视图绘制今日按键与点击两行数字，并与设置预览共用。弹窗按需创建和释放。
 - `Keytide/StatsPopoverViewController.swift`
   - AppKit 统计 popover，部分数值/KPS 视图嵌入 SwiftUI。
   - 当前实验菜单保留 384pt 宽、系统 `.popover` 材质、今日双列总量、5×3 常用键阵列、96pt 趋势图、全宽鼠标短行及原有底栏；顶部旧 3D 特写与资源已移除，Growth 改为常用键标题行的轻量文字入口。此前整体视觉未通过，新 Input Pulse 候选不代表这些问题已解决。

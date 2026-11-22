@@ -1,18 +1,17 @@
 import Cocoa
 
-final class MouseDistanceCalibrationWindowController: NSWindowController {
+final class MouseDistanceCalibrationWindowController: ReclaimingWindowController {
     static let shared = MouseDistanceCalibrationWindowController()
 
-    private let calibrationViewController = MouseDistanceCalibrationViewController()
+    private init() { super.init(window: nil) }
 
-    private init() {
+    override func makeWindow() -> NSWindow {
+        let calibrationViewController = MouseDistanceCalibrationViewController()
         let window = NSWindow(contentViewController: calibrationViewController)
         window.styleMask = [.titled, .closable]
         window.title = NSLocalizedString("settings.mouseDistanceCalibration.windowTitle", comment: "")
         window.setContentSize(NSSize(width: 360, height: 240))
-        window.isReleasedWhenClosed = false
-        window.center()
-        super.init(window: window)
+        return window
     }
 
     required init?(coder: NSCoder) {
@@ -20,8 +19,8 @@ final class MouseDistanceCalibrationWindowController: NSWindowController {
     }
 
     func show() {
-        calibrationViewController.prepareForDisplay()
-        guard let window = window else { return }
+        let window = windowForPresentation()
+        (contentViewController as? MouseDistanceCalibrationViewController)?.prepareForDisplay()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()

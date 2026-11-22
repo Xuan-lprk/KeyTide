@@ -1,6 +1,6 @@
 "permission.title" = "Accessibility Permission Required";
 "permission.message" = "Keytide needs Accessibility access to count keyboard and mouse activity.\n\nClick \"Open Permission Guide\" to open Privacy & Security > Accessibility. Find KeytideHelper in the list and toggle it on to finish authorization.";
-"permission.reinstallTip" = "You only need to grant access once — future updates will not ask for authorization again.";
+"permission.reinstallTip" = "If KeytideHelper is already on and Keytide still asks for access after an update, remove that entry. Click +, press Command–Shift–G, and add the installed Helper again:\n%@";
 "permission.openSettings" = "Open Permission Guide";
 "permission.later" = "Later";
 "button.permission" = "Permissions";
@@ -12,9 +12,6 @@
 "settings.section.notifications" = "Notifications";
 "settings.section.data" = "Data";
 "settings.dynamicIconColor" = "Enable Dynamic Icon Color";
-"settings.dynamicIconColorStyle" = "Display When Enabled";
-"settings.dynamicIconColorStyle.icon" = "Tint Icon";
-"settings.dynamicIconColorStyle.dot" = "Status Dot";
 "settings.dynamicIconColorWindow" = "Time Window (sec)";
 "settings.mouseDistanceCalibration" = "Calibrate Mouse Distance";
 "settings.mouseDistanceCalibration.windowTitle" = "Mouse Distance Calibration";
@@ -605,7 +602,7 @@
 "welcome.reopen" = "Open welcome guide";
 
 // Explicit opt-in, local-only chronological replay.
-"replay.recording.title" = "True replay recording";
+"replay.recording.title" = "Keyboard replay";
 "replay.recording.enable" = "Save actual key order";
 "replay.recording.help" = "Off by default. Records physical key order, presses, releases and millisecond timing across apps. Encrypted on this Mac until you delete it. Sequences may reveal typed content. Never uploaded or included in statistics exports. Stopping keeps existing records.";
 "replay.recording.off" = "True replay recording · Off";
@@ -614,11 +611,11 @@
 "replay.recording.suspended" = "True replay recording · Suspended";
 "replay.recording.unavailable" = "Recording unavailable or stopped. Check the updated Helper, permissions and local storage, then enable again. No plaintext fallback is used.";
 "replay.recording.stop" = "Stop true replay recording";
-"replay.recording.delete" = "Delete all replay records…";
+"replay.recording.delete" = "Delete keyboard recordings…";
 "replay.consent.title" = "Record actual key order across apps?";
-"replay.consent.body" = "Records which physical keys you press across apps, their order, and press/release times in milliseconds. Even without reading text fields, records may reveal passwords, messages and other typed content. Not every sensitive input can be identified.\n\nEncrypted on this Mac, never uploaded, and retained until you delete it. A red menu bar dot indicates the feature is enabled; use the context menu to stop. System-protected input and disconnections leave gaps. Old history cannot recover key order.";
+"replay.consent.body" = "Records which physical keys you press across apps, their order, and press/release times in milliseconds. Even without reading text fields, records may reveal passwords, messages and other typed content. Not every sensitive input can be identified.\n\nEncrypted on this Mac, never uploaded, and retained until you delete it. Check the recording status in Settings → Data or in the menu bar’s context menu. System-protected input and disconnections leave gaps. Old history cannot recover key order.";
 "replay.consent.enable" = "Enable local recording";
-"replay.delete.title" = "Permanently delete all replay records?";
+"replay.delete.title" = "Permanently delete all keyboard recordings?";
 "replay.delete.body" = "Also stops recording. Aggregate counts, app statistics and cumulative growth are kept. Actual key order for these dates cannot be recovered.";
 "replay.delete.failed" = "Some replay records could not be deleted. Check local file access.";
 "replay.loading" = "Loading local replay records…";
@@ -650,7 +647,7 @@
 "trackpad.stardust" = "Stardust";
 "trackpad.brush" = "Trackpad brush";
 "trackpad.clear" = "Clear";
-"trackpad.preview.help" = "Live preview. Click canvas to hide pointer; Esc exits. Background recording requires separate consent.";
+"trackpad.preview.help" = "Click the canvas to hide the pointer. Press Esc to restore it. Manage recording in Settings → Data.";
 "trackpad.ready" = "Preview off · No recording";
 "trackpad.waiting" = "Waiting for real touches · Device availability does not guarantee touch delivery";
 "trackpad.unavailable" = "Trackpad preview unavailable on this device. Keyboard and mouse statistics are unaffected.";
@@ -664,9 +661,9 @@
 
 "trackpad.replay" = "Replay day";
 
-"trackpad.delete" = "Delete records";
+"trackpad.delete" = "Delete trackpad recordings…";
 
-"trackpad.delete.confirm" = "Delete all trackpad recordings? Statistics are kept.";
+"trackpad.delete.confirm" = "Delete all trackpad recordings?";
 
 "trackpad.cancel" = "Cancel";
 
@@ -676,6 +673,32 @@
 
 "trackpad.replay.empty" = "No readable recording for this date.";
 
-"trackpad.consent" = "Record finger positions, order, source timestamps and relative pressure across apps? Encrypted on this Mac until manually deleted. No upload or statistics export. Closing this window does not stop recording.";
+"trackpad.consent" = "Record finger positions, order, source timestamps and relative pressure across apps? Records stay encrypted on this Mac until deleted and are excluded from uploads and statistics exports. To keep recording after quitting Keytide, allow background recording in General settings.";
 
-"trackpad.record.always" = "Always record in background";
+"trackpad.record.always" = "Trackpad replay recording";
+
+"trackpad.helper.unavailable" = "Trackpad Helper not connected. Reopen Keytide with the updated Helper to enable recording.";
+"trackpad.helper.recording" = "The Helper is recording locally.";
+"trackpad.helper.suspended" = "Recording paused while the Mac is asleep or the session is inactive.";
+"settings.appLogin.help" = "Open the Keytide menu bar app when you log in.";
+"backgroundInput.title" = "Continue after quitting";
+"backgroundInput.help" = "After setup, Keytide keeps saving keyboard and mouse stats when you quit and resumes at login. Detailed replay continues only if separately enabled.";
+"backgroundInput.error" = "The Helper couldn’t complete the request. Check that Keytide is connected and try again.";
+"monitoring.helperVersionMismatch" = "The installed Helper is incompatible with this version of Keytide.";
+"backgroundInput.waiting" = "Applies when the Helper is connected and collection has started.";
+"backgroundInput.savingOff" = "The Helper will stop collecting after quit once this change is applied.";
+"backgroundInput.syncFailed" = "Your choice was saved. The Helper couldn’t apply it. Reconnect or toggle again to retry.";
+"welcome.replay.title" = "Record for replay";
+"welcome.replay.body" = "Optional. Choose what Keytide can record while you use other apps.";
+"welcome.replay.keyboard" = "Keyboard replay recording";
+"welcome.replay.keyboardHelp" = "Saves physical key order and press and release times. These records can reveal passwords and private messages.";
+"welcome.replay.trackpadHelp" = "Saves finger paths, timing and relative pressure on the trackpad surface.";
+"welcome.replay.storage" = "Records stay encrypted on this Mac until you delete them. Keytide never uploads them. If Continue after quitting is on, recording continues after you quit. Manage both options in Settings → Data.";
+"welcome.replay.enable" = "Enable selected recording";
+"welcome.replay.skip" = "Skip for now";
+"welcome.replay.applying" = "Starting recording…";
+"welcome.replay.failed" = "Some selected recordings couldn’t start. Retry or finish setup and try again in Settings → Data.";
+"trackpad.record.help" = "Saves trackpad paths, timing and relative pressure across apps. Encrypted on this Mac until deleted. If Continue after quitting is on, recording also runs with Keytide closed.";
+"trackpad.record.starting" = "Applying recording setting…";
+"trackpad.record.off" = "Recording off";
+"trackpad.delete.help" = "This stops trackpad recording and permanently deletes its saved paths.";

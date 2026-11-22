@@ -34,4 +34,5 @@ enum HelperErrorCode {
     static let accessibilityDenied = 1
     static let tapCreateFailed = 2
     static let alreadyMonitoring = 3
+    static let incompatibleClient = 4
 }

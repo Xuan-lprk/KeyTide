@@ -1,10 +1,14 @@
 import Cocoa
 
-final class AllTimeStatsWindowController: NSWindowController {
+final class AllTimeStatsWindowController: ReclaimingWindowController {
     static let shared = AllTimeStatsWindowController()
+    private var lastBrowsing: AllTimeStatsViewController.BrowsingState?
 
-    private init() {
+    private init() { super.init(window: nil) }
+
+    override func makeWindow() -> NSWindow {
         let viewController = AllTimeStatsViewController()
+        viewController.restoreBrowsing(lastBrowsing)
         let window = NSWindow(contentViewController: viewController)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.title = NSLocalizedString("allTimeStats.windowTitle", comment: "")
@@ -16,18 +20,19 @@ final class AllTimeStatsWindowController: NSWindowController {
         window.backgroundColor = .windowBackgroundColor
         window.setContentSize(NSSize(width: 900, height: 740))
         window.minSize = NSSize(width: 760, height: 640)
-        window.isReleasedWhenClosed = false
-        window.center()
-
-        super.init(window: window)
+        return window
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func preservePresentation() {
+        lastBrowsing = (contentViewController as? AllTimeStatsViewController)?.browsingState()
+    }
+
     func show() {
-        guard let window = window else { return }
+        let window = windowForPresentation()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()

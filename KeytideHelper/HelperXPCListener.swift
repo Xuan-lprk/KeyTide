@@ -6,9 +6,16 @@ final class HelperXPCListener: NSObject, NSXPCListenerDelegate, KeytideHelperPro
     private let listener: NSXPCListener
     private let idle = HelperIdleSupervisor()
     private let tap = EventTapController()
+    private let trackpad = HelperTrackpadService()
+    private lazy var input = HelperInputService(tap: tap, defaults: UserDefaults(suiteName: HelperLocations.mainBundleId)!) {
+        [weak self] metric, count, threshold in
+        self?.captureProxy()?.receiveThresholdNotification?(metric == .keyPresses, count: count, threshold: threshold)
+    }
+    private weak var trackpadClient: NSXPCConnection?
+    private weak var captureClient: NSXPCConnection?
     private let stateLock = NSLock()
     private var activeConnection: NSXPCConnection?
-    private var forwardCount: Int = 0
+    private var activeClientVersion: Int?
 
     override init() {
         self.listener = NSXPCListener(machServiceName: HelperLocations.machServiceName)
@@ -20,7 +27,24 @@ final class HelperXPCListener: NSObject, NSXPCListenerDelegate, KeytideHelperPro
         self.listener.setConnectionCodeSigningRequirement(req)
     }
 
-    func resume() { listener.resume() }
+    func resume() {
+        // A v3 trackpad marker is not consent to keep all input capture running.
+        try? FileManager.default.removeItem(at: HelperLocations.trackpadBackgroundMarker)
+        trackpad.sendPreview = { [weak self] data in self?.trackpadProxy()?.receiveTrackpadPreview?(data) }
+        trackpad.sendStatus = { [weak self] status in self?.trackpadProxy()?.receiveTrackpadStatus?(status.rawValue) }
+        trackpad.restore()
+        input.sink = self
+        input.onKeepAlive = { [weak self] active in self?.idle.setBackgroundWorkActive(active) }
+        input.onPresenceChange = { [weak self] connected, detached in
+            self?.trackpad.updatePresence(connected: connected, allowsDetached: detached)
+        }
+        input.onSnapshot = { [weak self] data in self?.captureProxy()?.receiveInputSnapshot?(data) }
+        input.onReplayStatus = { [weak self] status in self?.captureProxy()?.receiveKeyboardReplayStatus?(status.rawValue) }
+        input.restore()
+        listener.resume()
+    }
+
+    func finish() { input.finish(); trackpad.finish() }
 
     func listener(_ listener: NSXPCListener,
                   shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
@@ -35,6 +59,9 @@ final class HelperXPCListener: NSObject, NSXPCListenerDelegate, KeytideHelperPro
             NSLog("[KeytideHelper] active connection exists, rejecting new")
             return false
         }
+        // Reserve the slot until the authenticated connection is fully installed.
+        activeConnection = newConnection
+        activeClientVersion = nil
         stateLock.unlock()
 
         newConnection.exportedInterface = NSXPCInterface(with: KeytideHelperProtocol.self)
@@ -57,13 +84,8 @@ final class HelperXPCListener: NSObject, NSXPCListenerDelegate, KeytideHelperPro
             self?.handleConnectionClosed(newConnection)
         }
 
-        newConnection.resume()
-
-        stateLock.lock()
-        activeConnection = newConnection
-        stateLock.unlock()
-
         idle.connectionDidOpen()
+        newConnection.resume()
         NSLog("[KeytideHelper] accepted connection from pid=\(newConnection.processIdentifier)")
         return true
     }
@@ -101,17 +123,36 @@ final class HelperXPCListener: NSObject, NSXPCListenerDelegate, KeytideHelperPro
 
     private func handleConnectionClosed(_ conn: NSXPCConnection?) {
         stateLock.lock()
-        if activeConnection === conn {
-            activeConnection = nil
-            tap.stop()
+        guard let conn, activeConnection === conn else {
+            stateLock.unlock()
+            return
         }
-        stateLock.unlock()
+        activeConnection = nil
+        activeClientVersion = nil
+        // Enqueue the close before a replacement can enqueue its open.
         idle.connectionDidClose()
+        stateLock.unlock()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.captureClient === conn {
+                self.captureClient = nil
+                self.input.detach()
+            }
+            if self.trackpadClient === conn {
+                self.trackpadClient = nil
+                self.trackpad.detachPreview()
+            }
+        }
     }
 
     func handshake(clientInterfaceVersion: Int,
                    reply: @escaping (Int, Bool) -> Void) {
         idle.noteActivity()
+        if let connection = NSXPCConnection.current() {
+            stateLock.lock()
+            if activeConnection === connection { activeClientVersion = clientInterfaceVersion }
+            stateLock.unlock()
+        }
         if tap.isAccessibilityGranted() {
             reply(HelperLocations.interfaceVersion, true)
             return
@@ -145,20 +186,38 @@ final class HelperXPCListener: NSObject, NSXPCListenerDelegate, KeytideHelperPro
     }
 
     func startMonitoring(reply: @escaping (Bool, Int) -> Void) {
-        idle.noteActivity()
-        let code = tap.start(sink: self)
-        reply(code == HelperErrorCode.none, code)
+        guard let connection = NSXPCConnection.current() else { reply(false, HelperErrorCode.tapCreateFailed); return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isCompatible(connection) else { reply(false, HelperErrorCode.incompatibleClient); return }
+            self.attachPresentation(connection)
+            let code = self.input.attach()
+            reply(code == HelperErrorCode.none || code == HelperErrorCode.alreadyMonitoring, code)
+        }
     }
 
     func stopMonitoring() {
-        idle.noteActivity()
-        tap.stop()
+        guard let connection = NSXPCConnection.current() else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.captureClient === connection else { return }
+            self.captureClient = nil
+            self.input.detach()
+        }
     }
 
     func setReplayRecordingEnabled(_ enabled: Bool, reply: @escaping (Bool) -> Void) {
-        idle.noteActivity()
-        tap.setReplayRecordingEnabled(enabled)
-        reply(true)
+        // A version 2/3 client must not change the local v4 writer's replay consent.
+        reply(false)
+    }
+
+    func controlInput(_ command: Int, argument: Data, reply: @escaping (Data?, Bool) -> Void) {
+        guard let action = InputControl(rawValue: command), let connection = NSXPCConnection.current() else {
+            reply(nil, false); return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isCompatible(connection) else { reply(nil, false); return }
+            self.attachPresentation(connection)
+            self.input.control(action, argument: argument, reply: reply)
+        }
     }
 
     func promptAccessibility(reply: @escaping (Bool) -> Void) {
@@ -170,22 +229,51 @@ final class HelperXPCListener: NSObject, NSXPCListenerDelegate, KeytideHelperPro
         reply(Bundle.main.bundleURL.path)
     }
 
-    func forward(payload: [String: Any]) {
-        stateLock.lock()
-        let conn = activeConnection
-        forwardCount += 1
-        let n = forwardCount
-        stateLock.unlock()
-        guard let conn = conn else {
-            if n <= 3 { NSLog("[KeytideHelper] forward #\(n) no active connection") }
+    func controlTrackpad(_ command: Int, reply: @escaping (Int, Bool) -> Void) {
+        guard let action = TrackpadControl(rawValue: command), let connection = NSXPCConnection.current() else {
+            reply(TrackpadRecordingStatus.off.rawValue, false)
             return
         }
-        let proxy = conn.remoteObjectProxyWithErrorHandler { err in
-            NSLog("[KeytideHelper] remote proxy error: \(err)")
-        } as? KeytideEventSinkProtocol
-        if n <= 3 || n % 100 == 0 {
-            NSLog("[KeytideHelper] forward #\(n) proxy=\(proxy == nil ? "nil" : "ok")")
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isCompatible(connection) else {
+                reply(TrackpadRecordingStatus.off.rawValue, false)
+                return
+            }
+            if let previous = self.trackpadClient, previous !== connection {
+                self.trackpad.detachPreview()
+            }
+            self.attachPresentation(connection)
+            self.trackpadClient = connection
+            self.trackpad.control(action, reply: reply)
         }
-        proxy?.receiveEvent(payload)
     }
+
+    private func isActive(_ connection: NSXPCConnection) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return activeConnection === connection
+    }
+
+    private func isCompatible(_ connection: NSXPCConnection) -> Bool {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return activeConnection === connection && (activeClientVersion ?? 0) >= HelperLocations.inputOwnershipVersion
+    }
+
+    private func attachPresentation(_ connection: NSXPCConnection) {
+        if captureClient === connection { return }
+        if captureClient != nil { input.detach() }
+        captureClient = connection
+        input.attachForPresentation()
+    }
+
+    private func trackpadProxy() -> KeytideEventSinkProtocol? {
+        guard let client = trackpadClient, isActive(client) else { return nil }
+        return client.remoteObjectProxyWithErrorHandler { _ in } as? KeytideEventSinkProtocol
+    }
+
+    private func captureProxy() -> KeytideEventSinkProtocol? {
+        guard let client = captureClient, isActive(client) else { return nil }
+        return client.remoteObjectProxyWithErrorHandler { _ in } as? KeytideEventSinkProtocol
+    }
+
+    func forward(payload: [String: Any]) { input.receive(payload) }
 }

@@ -45,7 +45,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupApplicationMenu()
         setupWindowMenu()
-        if AppLaunchMode.current == .normal { KeyReplayRecording.shared.startObserving(); TrackpadRecording.shared.startObserving() }
+        if AppLaunchMode.current == .normal {
+            KeyReplayRecording.shared.startObserving()
+            BackgroundInputController.shared.start()
+        }
 
         HelperXPCClient.shared.addStateObserver { [weak self] state in
             DispatchQueue.main.async {
@@ -79,20 +82,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
-        TrackpadRecording.shared.finish()
+        // XPC invalidation releases the trackpad preview subscription. Trackpad
+        // recording and its consent belong to the Helper across App launches.
         isTerminating = true
         cancelHelperReconnect()
         KeyReplayRecording.shared.shutdown()
         MonitoringStatus.shared.invalidate()
         Self.trackEvent("app_exit")
-        HelperXPCClient.shared.stopMonitoring()
         HelperXPCClient.shared.disconnect()
         permissionCheckTimer?.invalidate()
-        StatsManager.shared.flushPendingSave()
     }
-    
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return true
+    }
+
+    func applicationDidHide(_ notification: Notification) {
+        StatsManager.shared.discardPresentationHistory()
     }
     
     // MARK: - Helper 启动
@@ -132,6 +138,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             controller.onClose = { [weak self] in
                 self?.permissionCheckTimer?.invalidate()
                 self?.permissionCheckTimer = nil
+                DispatchQueue.main.async { [weak self] in
+                    guard self?.onboardingWindow?.window?.isVisible == false else { return }
+                    self?.onboardingWindow = nil
+                    StatsManager.shared.discardPresentationHistory()
+                }
             }
             onboardingWindow = controller
         }
@@ -186,9 +197,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[AppDelegate] helper xpc state = \(state)")
                 switch state {
                 case .connected(let version, let granted):
-                    guard AppLaunchMode.current.allowsHelperVersion(version, expected: HelperLocations.interfaceVersion) else {
-                        NSLog("[GUI Acceptance] Helper protocol mismatch (installed=%d expected=%d); monitoring disabled, Helper left unchanged", version, HelperLocations.interfaceVersion)
+                    guard version >= HelperLocations.inputOwnershipVersion,
+                          AppLaunchMode.current.allowsHelperVersion(version, expected: HelperLocations.interfaceVersion) else {
+                        NSLog("[AppDelegate] Helper protocol mismatch (installed=%d expected=%d)", version, HelperLocations.interfaceVersion)
                         HelperXPCClient.shared.disconnect()
+                        MonitoringStatus.shared.installationFailed(NSLocalizedString("monitoring.helperVersionMismatch", comment: ""))
                         return
                     }
                     if granted {
@@ -317,12 +330,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showPermissionAlert() {
         let alert = NSAlert()
         alert.messageText = NSLocalizedString("permission.title", comment: "")
-        // 使用 Assets 中的 AppIcon
-        if let appIcon = NSImage(named: "AppIcon") {
+        if let appIcon = NSApp.applicationIconImage {
             alert.icon = makeRoundedAlertIcon(from: appIcon)
         }
         let permissionMessage = NSLocalizedString("permission.message", comment: "")
-        let reinstallTip = NSLocalizedString("permission.reinstallTip", comment: "")
+        let reinstallTip = String(format: NSLocalizedString("permission.reinstallTip", comment: ""),
+                                  HelperLocations.installedHelperURL.path)
         let textParts = [permissionMessage, reinstallTip].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         alert.informativeText = textParts.joined(separator: "\n\n")
         alert.alertStyle = .informational
