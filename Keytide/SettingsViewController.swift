@@ -7,11 +7,6 @@ private func resolvedCGColor(_ color: NSColor, for view: NSView) -> CGColor {
     return resolved
 }
 
-private func resolvedColor(_ color: NSColor, for view: NSView) -> NSColor {
-    let cgColor = resolvedCGColor(color, for: view)
-    return NSColor(cgColor: cgColor) ?? color
-}
-
 private func resolvedCGColor(_ color: NSColor, alpha: CGFloat, for view: NSView) -> CGColor {
     var resolved: CGColor = color.cgColor
     view.effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -26,25 +21,137 @@ private final class SettingsDocumentView: NSView {
 
 private final class SettingsNavigationRow: NSTableRowView {
     override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
-    override func drawSelection(in dirtyRect: NSRect) {
-        NSColor.controlAccentColor.withAlphaComponent(isEmphasized ? 0.18 : 0.12).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 7, yRadius: 7).fill()
+    override func drawBackground(in dirtyRect: NSRect) {}
+    override func drawSelection(in dirtyRect: NSRect) {}
+
+    override var isSelected: Bool {
+        didSet { updateContents() }
+    }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        updateContents()
+    }
+
+    private func updateContents() {
+        for case let cell as NSTableCellView in subviews {
+            cell.textField?.font = .systemFont(ofSize: 13, weight: isSelected ? .semibold : .medium)
+            cell.textField?.textColor = isSelected ? .labelColor : .secondaryLabelColor
+            cell.imageView?.contentTintColor = isSelected ? .controlAccentColor : .secondaryLabelColor
+        }
+    }
+}
+
+/// The table owns selection and hit testing. A single layer behind it follows the selected row.
+private final class SettingsNavigationView: NSView {
+    let table = NSTableView()
+    private let backdrop = NSView()
+    private let selection = CALayer()
+    private var colorObserver: NSObjectProtocol?
+    private var displayObserver: NSObjectProtocol?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        backdrop.wantsLayer = true
+        selection.cornerRadius = 9
+        selection.cornerCurve = .continuous
+        selection.borderWidth = 1
+        selection.isHidden = true
+        backdrop.layer?.addSublayer(selection)
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.documentView = table
+        for child in [backdrop, scroll] {
+            child.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(child)
+            NSLayoutConstraint.activate([
+                child.leadingAnchor.constraint(equalTo: leadingAnchor),
+                child.trailingAnchor.constraint(equalTo: trailingAnchor),
+                child.topAnchor.constraint(equalTo: topAnchor),
+                child.bottomAnchor.constraint(equalTo: bottomAnchor)
+            ])
+        }
+        colorObserver = NotificationCenter.default.addObserver(
+            forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.updateColors() }
+        displayObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.updateColors()
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { self?.finishSelectionAnimation() }
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    deinit {
+        if let colorObserver { NotificationCenter.default.removeObserver(colorObserver) }
+        if let displayObserver { NSWorkspace.shared.notificationCenter.removeObserver(displayObserver) }
+    }
+
+    override func layout() {
+        super.layout()
+        updateSelection(animated: false)
+    }
+
+    func updateColors() {
+        let strong = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        selection.backgroundColor = resolvedCGColor(.controlAccentColor, alpha: strong ? 0.28 : 0.17, for: self)
+        selection.borderColor = resolvedCGColor(.controlAccentColor, alpha: strong ? 0.65 : 0.30, for: self)
+        CATransaction.commit()
+    }
+
+    func updateSelection(animated: Bool) {
+        guard table.selectedRow >= 0 else {
+            selection.removeAllAnimations()
+            selection.isHidden = true
+            return
+        }
+        let row = backdrop.convert(table.rect(ofRow: table.selectedRow), from: table)
+        let target = NSRect(x: 1, y: row.minY + 2, width: backdrop.bounds.width - 2, height: row.height - 4)
+        guard !target.isEmpty, selection.isHidden || selection.frame != target else { return }
+
+        let from = selection.presentation()?.position ?? selection.position
+        let shouldAnimate = animated && !selection.isHidden && window?.isVisible == true
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        selection.removeAnimation(forKey: "position")
+        selection.frame = target
+        selection.isHidden = false
+        CATransaction.commit()
+
+        if shouldAnimate {
+            let slide = CABasicAnimation(keyPath: "position")
+            slide.fromValue = NSValue(point: from)
+            slide.toValue = NSValue(point: selection.position)
+            slide.duration = 0.22
+            slide.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.75, 0.25, 1)
+            selection.add(slide, forKey: "position")
+        }
+    }
+
+    func finishSelectionAnimation() {
+        selection.removeAnimation(forKey: "position")
     }
 }
 
 final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
 
-    private let navigation = NSTableView()
+    private let navigationView = SettingsNavigationView()
+    private var navigation: NSTableView { navigationView.table }
     private var pages: [[NSView]] = []
     private let pageKeys = ["general", "appearance", "notifications", "data"]
     private let pageSymbols = ["gearshape", "menubar.rectangle", "bell", "externaldrive"]
     private(set) var selectedPage = 0
+    private var displayedPage: Int?
 
     private var scrollView: NSScrollView!
     private var documentView: NSView!
     private var contentStack: NSStackView!
 
-    private var appIconView: NSImageView!
     private var headerTitleLabel: NSTextField!
     private var headerSubtitleLabel: NSTextField!
     private var githubButton: NSButton!
@@ -78,7 +185,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     private var notificationThresholdContainer: NSStackView!
 
     private var cardViews: [NSView] = []
-    private var dividerViews: [NSView] = []
     private var optionDividerViews: [NSView] = []
     private let fileTransferQueue = DispatchQueue(label: "Keytide.SettingsFileTransfers", qos: .userInitiated)
     private(set) var fileTransferInProgress = false
@@ -169,9 +275,12 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        DispatchQueue.main.async { [weak self] in
-            self?.view.window?.makeFirstResponder(nil)
-        }
+        view.window?.makeFirstResponder(navigation)
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        navigationView.finishSelectionAnimation()
     }
 
     deinit {
@@ -201,7 +310,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         let sidebarStack = NSStackView()
         sidebarStack.orientation = .vertical
         sidebarStack.alignment = .leading
-        sidebarStack.spacing = 20
+        sidebarStack.spacing = 24
         sidebarStack.translatesAutoresizingMaskIntoConstraints = false
         sidebar.addSubview(sidebarStack)
 
@@ -209,7 +318,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
-        view.addSubview(scrollView)
 
         documentView = SettingsDocumentView()
         documentView.translatesAutoresizingMaskIntoConstraints = false
@@ -218,22 +326,22 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         contentStack = NSStackView()
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
-        contentStack.spacing = 20
+        contentStack.spacing = 22
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(contentStack)
 
-        appIconView = NSImageView()
-        appIconView.image = NSApp.applicationIconImage
+        let appIconView = NSImageView(image: NSApp.applicationIconImage)
         appIconView.imageScaling = .scaleProportionallyUpOrDown
+        appIconView.setAccessibilityElement(false)
         appIconView.translatesAutoresizingMaskIntoConstraints = false
-        appIconView.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        appIconView.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        appIconView.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        appIconView.heightAnchor.constraint(equalToConstant: 36).isActive = true
 
         headerTitleLabel = NSTextField(labelWithString: NSLocalizedString("settings.windowTitle", comment: ""))
-        headerTitleLabel.font = NSFont.systemFont(ofSize: 26, weight: .bold)
+        headerTitleLabel.font = NSFont.systemFont(ofSize: 29, weight: .semibold)
 
-        headerSubtitleLabel = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.header.subtitle", comment: ""))
-        headerSubtitleLabel.font = NSFont.systemFont(ofSize: 12)
+        headerSubtitleLabel = NSTextField(wrappingLabelWithString: "")
+        headerSubtitleLabel.font = NSFont.systemFont(ofSize: 13)
         headerSubtitleLabel.textColor = .secondaryLabelColor
 
         let versionString: String = {
@@ -243,12 +351,12 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         }()
         let versionLabel = NSTextField(labelWithString: versionString)
         versionLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        versionLabel.textColor = .tertiaryLabelColor
+        versionLabel.textColor = .secondaryLabelColor
 
         githubButton = makeSymbolButton(
             systemName: "chevron.left.forwardslash.chevron.right",
             fallbackTitle: NSLocalizedString("settings.github", comment: ""),
-            pointSize: 14,
+            pointSize: 13,
             weight: .semibold,
             action: #selector(openGitHubRepository)
         )
@@ -256,9 +364,8 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         githubButton.setAccessibilityLabel(NSLocalizedString("settings.github", comment: ""))
         githubButton.imageScaling = .scaleProportionallyDown
         if let hoverButton = githubButton as? HoverIconButton {
-            hoverButton.showsHoverBackground = false
-            hoverButton.padding = 4
-            hoverButton.cornerRadius = 6
+            hoverButton.padding = 5
+            hoverButton.cornerRadius = 7
         }
         NSLayoutConstraint.activate([
             githubButton.widthAnchor.constraint(equalToConstant: 28),
@@ -266,65 +373,78 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         ])
         applyBundledGitHubIconIfNeeded()
 
-        let headerTextStack = NSStackView(views: [headerTitleLabel, headerSubtitleLabel])
-        headerTextStack.orientation = .vertical
-        headerTextStack.alignment = .leading
-        headerTextStack.spacing = 2
-        headerTextStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let headerSpacer = NSView()
-        headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        headerSpacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let headerStack = NSStackView(views: [headerTextStack, headerSpacer, githubButton])
         let brand = NSTextField(labelWithString: "Keytide")
-        brand.font = .systemFont(ofSize: 18, weight: .semibold)
+        brand.font = .systemFont(ofSize: 17, weight: .semibold)
         let identity = NSStackView(views: [appIconView, brand])
         identity.orientation = .horizontal
         identity.spacing = 10
         identity.alignment = .centerY
         sidebarStack.addArrangedSubview(identity)
-        navigation.frame = NSRect(x: 0, y: 0, width: 162, height: 190)
+        let sidebarWidth: CGFloat = 198
+        let sidebarInset: CGFloat = 14
+        let rowHeight: CGFloat = 40
+        let rowSpacing: CGFloat = 4
+        let navigationHeight = CGFloat(pageKeys.count) * (rowHeight + rowSpacing)
+        navigation.frame = NSRect(x: 0, y: 0, width: sidebarWidth - 2 * sidebarInset, height: navigationHeight)
         navigation.autoresizingMask = [.width]
         navigation.headerView = nil
         navigation.style = .plain
         navigation.backgroundColor = .clear
-        navigation.rowHeight = 36
-        navigation.intercellSpacing = NSSize(width: 0, height: 6)
+        navigation.rowHeight = rowHeight
+        navigation.intercellSpacing = NSSize(width: 0, height: rowSpacing)
         navigation.selectionHighlightStyle = .regular
         navigation.allowsEmptySelection = false
-        navigation.focusRingType = .none
+        navigation.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        navigation.setAccessibilityLabel(NSLocalizedString("settings.windowTitle", comment: ""))
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("category"))
+        column.resizingMask = .autoresizingMask
+        column.width = navigation.frame.width
         navigation.addTableColumn(column)
         navigation.dataSource = self
         navigation.delegate = self
-        let navigationScroll = NSScrollView()
-        navigationScroll.drawsBackground = false
-        navigationScroll.documentView = navigation
-        navigationScroll.hasVerticalScroller = false
-        navigationScroll.translatesAutoresizingMaskIntoConstraints = false
-        sidebarStack.addArrangedSubview(navigationScroll)
-        navigationScroll.widthAnchor.constraint(equalTo: sidebarStack.widthAnchor).isActive = true
-        navigationScroll.heightAnchor.constraint(equalToConstant: 190).isActive = true
-        let sidebarFooter = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.localOnly", comment: ""))
-        sidebarFooter.font = .systemFont(ofSize: 11)
-        sidebarFooter.textColor = .secondaryLabelColor
-        sidebarStack.addArrangedSubview(sidebarFooter)
-        sidebarStack.addArrangedSubview(versionLabel)
+        addArrangedSubviewFillingWidth(navigationView, to: sidebarStack)
+        navigationView.heightAnchor.constraint(equalToConstant: navigationHeight).isActive = true
+
+        let privacyLabel = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.localOnly", comment: ""))
+        privacyLabel.font = .systemFont(ofSize: 11)
+        privacyLabel.textColor = .secondaryLabelColor
+        let footerRow = NSStackView(views: [versionLabel, NSView(), githubButton])
+        footerRow.alignment = .centerY
+        let footer = makeVerticalStack(spacing: 6)
+        addArrangedSubviewFillingWidth(StatsWindowStyle.separator(), to: footer)
+        addArrangedSubviewFillingWidth(privacyLabel, to: footer)
+        addArrangedSubviewFillingWidth(footerRow, to: footer)
+        sidebar.addSubview(footer)
         NSLayoutConstraint.activate([
             sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sidebar.topAnchor.constraint(equalTo: view.topAnchor),
             sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            sidebar.widthAnchor.constraint(equalToConstant: 190),
-            sidebarStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 16),
-            sidebarStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
-            sidebarStack.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 26)
+            sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth),
+            sidebarStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: sidebarInset),
+            sidebarStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -sidebarInset),
+            sidebarStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            footer.leadingAnchor.constraint(equalTo: sidebarStack.leadingAnchor, constant: 3),
+            footer.trailingAnchor.constraint(equalTo: sidebarStack.trailingAnchor, constant: -3),
+            footer.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -16),
+            footer.topAnchor.constraint(greaterThanOrEqualTo: sidebarStack.bottomAnchor, constant: 16)
         ])
-        headerStack.orientation = .horizontal
-        headerStack.alignment = .centerY
-        headerStack.spacing = 12
-        addArrangedSubviewFillingWidth(headerStack, to: contentStack)
-        contentStack.setCustomSpacing(20, after: headerStack)
+
+        let header = makeVerticalStack(spacing: 5)
+        header.addArrangedSubview(headerTitleLabel)
+        addArrangedSubviewFillingWidth(headerSubtitleLabel, to: header)
+        view.addSubview(header)
+        let headerDivider = StatsWindowStyle.separator()
+        view.addSubview(headerDivider)
+        view.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 19),
+            header.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 30),
+            header.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -30),
+            headerDivider.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 18),
+            headerDivider.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            headerDivider.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: headerDivider.bottomAnchor)
+        ])
 
         appStatsEnabledButton = makeSwitch(action: #selector(toggleAppStatsEnabled))
         launchAtLoginButton = makeSwitch(action: #selector(toggleLaunchAtLogin))
@@ -416,7 +536,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         addArrangedSubviewFillingWidth(thresholdIndentStack, to: notificationThresholdContainer)
         addArrangedSubviewFillingWidth(notificationThresholdContainer, to: notificationStack)
 
-        let notificationSection = makeSection(titleKey: "settings.section.notifications", content: notificationStack)
+        let notificationSection = makeSection(content: notificationStack)
 
         mouseDistanceCalibrationButton = NSButton(title: NSLocalizedString("settings.mouseDistanceCalibration", comment: ""),
                                                   target: self,
@@ -445,19 +565,15 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         resetButton.contentTintColor = nil
 
         let actionStack = makeVerticalStack(spacing: 14)
-        addArrangedSubviewFillingWidth(makeActionRow("settings.data.calibration", help: "settings.data.calibrationHelp", button: mouseDistanceCalibrationButton), to: actionStack)
+        addArrangedSubviewFillingWidth(makeActionRow("settings.data.calibration", help: "settings.data.calibrationHelp", control: mouseDistanceCalibrationButton), to: actionStack)
         addArrangedSubviewFillingWidth(makeOptionDividerContainer(), to: actionStack)
         let transferButtons = NSStackView(views: [importButton, exportButton])
         transferButtons.spacing = 8
-        addArrangedSubviewFillingWidth(makeLabeledRow(title: NSLocalizedString("settings.data.transfer", comment: ""), control: transferButtons), to: actionStack)
-        let transferHelp = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.data.transferHelp", comment: ""))
-        transferHelp.font = .systemFont(ofSize: 11)
-        transferHelp.textColor = .secondaryLabelColor
-        addArrangedSubviewFillingWidth(transferHelp, to: actionStack)
-        let resetSection = makeSection(titleKey: "settings.data.reset", content: makeActionRow("settings.data.reset", help: "settings.data.resetHelp", button: resetButton))
+        addArrangedSubviewFillingWidth(makeActionRow("settings.data.transfer", help: "settings.data.transferHelp", control: transferButtons), to: actionStack)
+        let resetSection = makeSection(content: makeActionRow("settings.data.reset", help: "settings.data.resetHelp", control: resetButton))
         resetButton.contentTintColor = .systemRed
 
-        let actionSection = makeSection(titleKey: "settings.section.data", content: actionStack)
+        let actionSection = makeSection(content: actionStack)
 
         replayRecordingButton = makeSwitch(action: #selector(toggleReplayRecording))
         replayStatusLabel = NSTextField(wrappingLabelWithString: "")
@@ -473,7 +589,6 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         replayOptions.addArrangedSubview(deleteReplay)
         let replaySection = makeSection(titleKey: "replay.recording.title", content: replayOptions)
         updateReplayState()
-
         trackpadRecordingButton = makeSwitch(action: #selector(toggleTrackpadRecording))
         trackpadRecordingStatus = NSTextField(wrappingLabelWithString: "")
         let trackpadHelp = NSTextField(wrappingLabelWithString: NSLocalizedString("trackpad.record.help", comment: ""))
@@ -491,26 +606,24 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         updateTrackpadRecordingState()
         pages = [[trackingSection], [menuBarSection], [notificationSection],
                  [actionSection, replaySection, trackpadSection, resetSection]]
-        navigation.reloadData()
-        navigation.selectRowIndexes(IndexSet(integer: initialPage), byExtendingSelection: false)
-        showPage(initialPage)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
             documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
             documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            documentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
 
-            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 28),
-            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 28),
-            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -28),
+            contentStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 20),
+            contentStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 30),
+            contentStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -30),
             contentStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -24)
         ])
+        navigation.reloadData()
+        navigation.selectRowIndexes(IndexSet(integer: initialPage), byExtendingSelection: false)
+        showPage(initialPage)
     }
 
     private func updateReplayState() {
@@ -593,14 +706,17 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell = NSTableCellView()
         let label = NSTextField(labelWithString: NSLocalizedString("settings.navigation." + pageKeys[row], comment: ""))
-        let icon = NSImageView(image: NSImage(systemSymbolName: pageSymbols[row], accessibilityDescription: nil)!)
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        icon.contentTintColor = .secondaryLabelColor
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: pageSymbols[row], accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .medium))
+        icon.imageScaling = .scaleProportionallyDown
+        icon.setAccessibilityElement(false)
+        label.lineBreakMode = .byTruncatingTail
         for child in [icon, label] { child.translatesAutoresizingMaskIntoConstraints = false; cell.addSubview(child) }
         cell.textField = label; cell.imageView = icon
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
-            icon.widthAnchor.constraint(equalToConstant: 17), icon.heightAnchor.constraint(equalToConstant: 17),
+            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 13),
+            icon.widthAnchor.constraint(equalToConstant: 18), icon.heightAnchor.constraint(equalToConstant: 18),
             icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
             label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -8),
@@ -611,39 +727,31 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard navigation.selectedRow >= 0 else { return }
+        navigationView.updateSelection(animated: true)
         showPage(navigation.selectedRow)
     }
 
     private func showPage(_ index: Int) {
-        guard pages.indices.contains(index) else { return }
+        guard pages.indices.contains(index), displayedPage != index else { return }
         selectedPage = index
-        // The first arranged subview is the shared page header.
-        for child in Array(contentStack.arrangedSubviews.dropFirst()) {
-            contentStack.removeArrangedSubview(child)
-            child.removeFromSuperview()
-        }
+        displayedPage = index
+        for child in contentStack.arrangedSubviews { child.removeFromSuperview() }
         headerTitleLabel.stringValue = NSLocalizedString("settings.page." + pageKeys[index], comment: "")
         headerSubtitleLabel.stringValue = NSLocalizedString("settings.page." + pageKeys[index] + ".help", comment: "")
         for section in pages[index] { addArrangedSubviewFillingWidth(section, to: contentStack) }
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        let transition = CATransition()
-        transition.type = .fade
-        transition.duration = 0.16
-        transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        contentStack.layer?.add(transition, forKey: "settingsPage")
     }
 
-    private func makeActionRow(_ title: String, help: String, button: NSButton) -> NSView {
+    private func makeActionRow(_ title: String, help: String, control: NSView) -> NSView {
         let text = NSTextField(wrappingLabelWithString: NSLocalizedString(title, comment: ""))
         text.font = .systemFont(ofSize: 13, weight: .medium)
         let detail = NSTextField(wrappingLabelWithString: NSLocalizedString(help, comment: ""))
-        detail.font = .systemFont(ofSize: 11)
+        detail.font = .systemFont(ofSize: 12)
         detail.textColor = .secondaryLabelColor
         let labels = NSStackView(views: [text, detail])
         labels.orientation = .vertical; labels.alignment = .leading; labels.spacing = 4
-        return makeLabeledRowView(labels: labels, control: button)
+        return makeLabeledRowView(labels: labels, control: control)
     }
 
     private func makeLabeledRowView(labels: NSView, control: NSView) -> NSView {
@@ -654,9 +762,7 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         return row
     }
 
-    private func makeSection(titleKey: String, content: NSView) -> NSView {
-        let titleLabel = makeSectionTitleLabel(NSLocalizedString(titleKey, comment: ""))
-
+    private func makeSection(titleKey: String? = nil, content: NSView) -> NSView {
         let card = NSView()
         card.translatesAutoresizingMaskIntoConstraints = false
         card.wantsLayer = true
@@ -671,8 +777,10 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
         ])
 
         cardViews.append(card)
+        guard let titleKey else { return card }
 
-        let wrapper = makeVerticalStack(spacing: 6)
+        let titleLabel = makeSectionTitleLabel(NSLocalizedString(titleKey, comment: ""))
+        let wrapper = makeVerticalStack(spacing: 8)
         wrapper.addArrangedSubview(titleLabel)
         addArrangedSubviewFillingWidth(card, to: wrapper)
 
@@ -681,16 +789,9 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
 
     private func makeSectionTitleLabel(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         label.textColor = .labelColor
         return label
-    }
-
-    private func makeDivider() -> NSView {
-        let divider = NSView()
-        divider.wantsLayer = true
-        divider.translatesAutoresizingMaskIntoConstraints = false
-        return divider
     }
 
     private func makeOptionDivider() -> NSView {
@@ -866,42 +967,25 @@ final class SettingsViewController: NSViewController, NSTextFieldDelegate, NSTab
     }
 
     private func updateAppearance() {
-        view.layer?.backgroundColor = resolvedCGColor(NSColor.windowBackgroundColor, for: view)
-        view.window?.backgroundColor = NSColor.windowBackgroundColor
-        let isDarkMode = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let shadowColor = NSColor.black.withAlphaComponent(isDarkMode ? 0.2 : 0.07)
-        let dividerAlpha: CGFloat = isDarkMode ? 0.2 : 0.12
-        let optionDividerAlpha: CGFloat = isDarkMode ? 0.24 : 0.14
-        let darkSectionBaseColor = NSColor(
-            srgbRed: 39.0 / 255.0,
-            green: 43.0 / 255.0,
-            blue: 45.0 / 255.0,
-            alpha: 1.0
-        )
-
-        for card in cardViews {
-            guard let layer = card.layer else { continue }
-            layer.cornerRadius = 12
-            layer.masksToBounds = false
-            if isDarkMode {
-                layer.backgroundColor = resolvedCGColor(darkSectionBaseColor, for: view)
-            } else {
-                layer.backgroundColor = resolvedCGColor(NSColor.controlBackgroundColor, alpha: 0.88, for: view)
-            }
-            layer.borderWidth = 0.5
-            layer.borderColor = resolvedCGColor(.separatorColor, alpha: 0.25, for: view)
-            layer.shadowColor = resolvedCGColor(shadowColor, for: view)
-            layer.shadowOpacity = 0
-            layer.shadowRadius = 8
-            layer.shadowOffset = NSSize(width: 0, height: -1)
+        guard isViewLoaded else { return }
+        view.layer?.backgroundColor = resolvedCGColor(.windowBackgroundColor, for: view)
+        view.window?.backgroundColor = .windowBackgroundColor
+        navigationView.updateColors()
+        let cardColor: NSColor
+        if #available(macOS 14.0, *) {
+            cardColor = .quaternarySystemFill
+        } else {
+            cardColor = .labelColor.withAlphaComponent(0.055)
         }
 
-        for divider in dividerViews {
-            divider.layer?.backgroundColor = resolvedCGColor(NSColor.separatorColor, alpha: dividerAlpha, for: view)
+        for card in cardViews {
+            card.layer?.cornerRadius = 14
+            card.layer?.cornerCurve = .continuous
+            card.layer?.backgroundColor = resolvedCGColor(cardColor, for: view)
         }
 
         for divider in optionDividerViews {
-            divider.layer?.backgroundColor = resolvedCGColor(NSColor.separatorColor, alpha: optionDividerAlpha, for: view)
+            divider.layer?.backgroundColor = resolvedCGColor(.separatorColor, for: view)
         }
     }
 

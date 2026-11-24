@@ -10,12 +10,11 @@ final class SettingsWindowController: ReclaimingWindowController {
         let viewController = SettingsViewController()
         viewController.restorePage(lastPage)
         let window = NSWindow(contentViewController: viewController)
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         window.title = NSLocalizedString("settings.windowTitle", comment: "")
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none
         window.titlebarAppearsTransparent = true
-        window.styleMask.insert(.resizable)
         window.isMovableByWindowBackground = true
         window.backgroundColor = .windowBackgroundColor
         window.setContentSize(NSSize(width: 840, height: 650))
