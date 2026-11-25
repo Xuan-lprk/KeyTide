@@ -101,6 +101,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         StatsManager.shared.discardPresentationHistory()
     }
     
+    func armGeminiPreview() {
+        menuBarController?.armGeminiPreview()
+    }
+
     // MARK: - Helper 启动
 
     private var suppressesLegacySetupPrompts: Bool {

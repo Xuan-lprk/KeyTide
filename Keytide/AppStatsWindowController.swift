@@ -34,8 +34,7 @@ final class AppStatsWindowController: ReclaimingWindowController {
     func show() {
         let window = windowForPresentation()
         let wasVisible = window.isVisible
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        window.presentInDock()
         window.orderFrontRegardless()
         AppDelegate.trackPageView("app_stats")
 

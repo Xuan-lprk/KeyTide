@@ -305,8 +305,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         }
         login.state = loginEnabled?() == true ? .on : .off
         render()
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        window.presentInDock()
         if showingSetup {
             if setupRequested { onRecheck?() } else { prepareOnce() }
         }

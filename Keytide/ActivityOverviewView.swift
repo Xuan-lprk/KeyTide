@@ -3,6 +3,9 @@ import AppKit
 /// Presentation-only daily chart. Values come from StatsManager's existing series;
 /// selecting a day never changes the stored statistics or date range.
 final class ActivityOverviewView: NSView {
+    static let keysColor = NSColor(calibratedRed: 0.34, green: 0.65, blue: 0.94, alpha: 1)
+    static let clicksColor = NSColor(calibratedRed: 0.94, green: 0.72, blue: 0.38, alpha: 1)
+
     private var days: [ActivityHeatmapView.DayActivity] = []
     private var rects: [NSRect] = []
     private var hoveredIndex: Int?
@@ -119,11 +122,11 @@ final class ActivityOverviewView: NSView {
                 fullBar.fill()
             }
             if keyHeight > 0 {
-                NSColor(calibratedRed: 0.34, green: 0.65, blue: 0.94, alpha: 1).setFill()
+                Self.keysColor.setFill()
                 NSBezierPath(rect: keyRect).fill()
             }
             if total > 0, clickHeight > 0 {
-                NSColor(calibratedRed: 0.94, green: 0.72, blue: 0.38, alpha: 1).setFill()
+                Self.clicksColor.setFill()
                 NSBezierPath(rect: clickRect).fill()
             }
             NSGraphicsContext.current?.restoreGraphicsState()

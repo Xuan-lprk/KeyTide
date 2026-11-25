@@ -16,10 +16,14 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var statusView: MenuBarStatusView?
     private var replayStatusObserver: NSObjectProtocol?
-    private var popover: NSPopover?
-    private var popoverStyle: MenuUIStyle = .standard
-    private var historySelections: [MenuUIStyle: MenuHistorySelection] = [:]
+    private var widgetsPanel: MenuWidgetsPanel?
+    private var classicPopover: NSPopover?
+    private var classicStyle: MenuUIStyle = .standard
+    private var classicHistorySelections: [MenuUIStyle: MenuHistorySelection] = [:]
+    private var constellationHistory: MenuWidgetsPanel.ConstellationHistory = [:]
+    private var pendingGeminiPreview: UUID?
     private var eventMonitor: Any?
+    private var localEventMonitor: Any?
     private let menuBarUpdateInterval: TimeInterval = 0.1
     private var pendingMenuBarUpdate: DispatchWorkItem?
     private var lastMenuBarUpdateTime: TimeInterval = 0
@@ -59,7 +63,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
         let statusView = MenuBarStatusView()
         statusView.onClick = { [weak self] in
-            self?.togglePopover()
+            self?.toggleStatistics()
         }
         statusView.onRightClick = { [weak self] in
             self?.showContextMenu()
@@ -88,6 +92,22 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         )
         mechanicalKeyboardItem.target = self
         menu.addItem(mechanicalKeyboardItem)
+
+        let monitoring = MonitoringStatus.shared
+        if monitoring.state != .monitoring {
+            let key = monitoring.failureDescription == nil ? "button.permission" : "monitoring.retry"
+            let permissionItem = NSMenuItem(title: NSLocalizedString(key, comment: ""),
+                                            action: #selector(requestMonitoring), keyEquivalent: "")
+            permissionItem.target = self
+            permissionItem.isEnabled = monitoring.state != .starting
+            permissionItem.toolTip = monitoring.failureDescription
+            menu.addItem(permissionItem)
+        }
+        let updateItem = NSMenuItem(title: NSLocalizedString("button.checkUpdates", comment: ""),
+                                    action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.target = self
+        menu.addItem(updateItem)
+
         let recording = KeyReplayRecording.shared
         let recordingTitle = recording.isEnabled ? "replay.recording.stop" : "replay.recording.off"
         let recordingItem = NSMenuItem(title: NSLocalizedString(recordingTitle, comment: ""),
@@ -110,70 +130,44 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         return menu
     }
 
-    // MARK: - 设置弹出面板
-
-    private func setupPopover() {
-        let popover = NSPopover()
-        self.popover = popover
-        popover.delegate = self
-        popover.behavior = .transient
-        popover.animates = false
-        popoverStyle = MenuUIStyle.current
-        let controller: NSViewController & MenuStatsPresenting
-        if popoverStyle == .geek { controller = GeekStatsPopoverViewController() }
-        else { controller = StatsPopoverViewController() }
-        controller.historySelection = historySelections[popoverStyle] ?? MenuHistorySelection()
-        controller.preferredSizeDidChange = { [weak self, weak controller] targetSize in
-            guard let popover = self?.popover, let controller, popover.contentViewController === controller else { return }
-            popover.contentSize = targetSize
-        }
-        popover.contentViewController = controller
-    }
-
-    // MARK: - 设置事件监听（点击外部关闭弹窗）
-
     private func setupEventMonitor() {
-        guard eventMonitor == nil else { return }
+        guard eventMonitor == nil, localEventMonitor == nil else { return }
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            if let popover = self?.popover, popover.isShown {
-                popover.performClose(nil)
+            self?.closeStatistics()
+        }
+        if let widgetsPanel {
+            localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak widgetsPanel] event in
+                if let self, let widgetsPanel, event.window !== widgetsPanel, event.window !== self.statusView?.window {
+                    self.closeStatistics()
+                }
+                return event
             }
         }
     }
 
     private func removeEventMonitor() {
-        guard let eventMonitor else { return }
-        NSEvent.removeMonitor(eventMonitor)
-        self.eventMonitor = nil
-    }
-
-    func popoverDidClose(_ notification: Notification) {
-        guard let closed = notification.object as? NSPopover, popover === closed else { return }
-        releasePopover(closed)
-    }
-
-    private func releasePopover(_ closed: NSPopover) {
-        removeEventMonitor()
-        if let controller = closed.contentViewController as? MenuStatsPresenting {
-            historySelections[popoverStyle] = controller.historySelection
-            controller.preferredSizeDidChange = nil
-        }
-        popover = nil
-        StatsManager.shared.discardPresentationHistory()
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+        if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
+        eventMonitor = nil
+        localEventMonitor = nil
     }
 
     // MARK: - 操作
 
-    @objc private func togglePopover() {
-        if popover?.isShown == true {
-            closePopover()
+    private var isShowingStatistics: Bool {
+        classicPopover?.isShown == true || widgetsPanel?.isDismissing == false
+    }
+
+    private func toggleStatistics() {
+        if isShowingStatistics {
+            closeStatistics()
         } else {
-            showPopover()
+            showStatistics()
         }
     }
 
     private func showContextMenu() {
-        closePopover()
+        closeStatistics()
         statusItem.popUpMenu(makeContextMenu())
     }
 
@@ -189,44 +183,110 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         KeyboardHeatmapWindowController.shared.show()
     }
 
+    @objc private func requestMonitoring() {
+        if MonitoringStatus.shared.failureDescription != nil {
+            AppDelegate.shared?.retryMonitoring()
+        } else {
+            AppDelegate.shared?.requestAccessibilityPermission(analyticsSource: "context_menu")
+        }
+    }
+
+    @objc private func checkForUpdates() { UpdateManager.shared.checkForUpdates() }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
 
-    func showStatistics() { showPopover() }
+    func armGeminiPreview() { pendingGeminiPreview = UUID() }
 
-    private func showPopover() {
-        if popover?.isShown == true { return }
-        if let popover { releasePopover(popover) }
-        setupPopover()
-        guard let popover else { return }
-        // 先激活应用，确保弹窗可以接收焦点
-        NSApp.activate(ignoringOtherApps: true)
-
-        if let statsPopoverViewController = popover.contentViewController as? MenuStatsPresenting {
-            statsPopoverViewController.prepareForPopoverPresentation()
-            popover.contentSize = statsPopoverViewController.preferredContentSize
-        }
-
-        if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        } else if let view = statusItem.view {
-            popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
-        } else {
-            releasePopover(popover)
-            return
-        }
-
-        // 确保 popover 窗口成为 key window
-        popover.contentViewController?.view.window?.makeKey()
-        if popover.isShown { setupEventMonitor() }
-        else { releasePopover(popover) }
+    func showStatistics() {
+        guard !isShowingStatistics else { return }
+        if let classicPopover { releaseClassicPopover(classicPopover) }
+        widgetsPanel?.dismiss(animated: false)
+        let popoverStyle = MenuPresentation.load().popoverStyle
+        let shown = popoverStyle.map(showClassicPopover(style:)) ?? showWidgetsPanel()
+        guard shown else { return }
+        setupEventMonitor()
         AppDelegate.trackClick("tray_icon")
         AppDelegate.trackPageView("stats_popup")
     }
 
-    private func closePopover() {
-        popover?.performClose(nil)
+    private func showWidgetsPanel() -> Bool {
+        guard let screen = statusView?.window?.screen ?? statusItem.button?.window?.screen ?? NSScreen.main else { return false }
+        let panel = MenuWidgetsPanel(screen: screen, configuration: MenuWidgetPreferences.load(),
+                                     constellationHistory: constellationHistory)
+        if let request = pendingGeminiPreview {
+            panel.claimGeminiPreview = { [weak self] in
+                guard let self, self.pendingGeminiPreview == request else { return false }
+                self.pendingGeminiPreview = nil
+                return true
+            }
+        }
+        panel.onRequestClose = { [weak self] in self?.closeStatistics() }
+        panel.onOpenSettings = { [weak self] in
+            self?.closeStatistics()
+            SettingsWindowController.shared.show(page: .appearance)
+        }
+        panel.onDismiss = { [weak self] in self?.widgetsPanel = nil }
+        widgetsPanel = panel
+        panel.present()
+        return panel.isVisible
+    }
+
+    private func showClassicPopover(style: MenuUIStyle) -> Bool {
+        let anchor: NSView? = statusView?.window == nil ? statusItem.button : statusView
+        guard let anchor, anchor.window != nil else { return false }
+
+        let popover = NSPopover()
+        popover.delegate = self
+        popover.behavior = .transient
+        popover.animates = false
+        classicPopover = popover
+        classicStyle = style
+
+        let controller: NSViewController & MenuStatsPresenting
+        if classicStyle == .geek { controller = GeekStatsPopoverViewController() }
+        else { controller = StatsPopoverViewController() }
+        controller.historySelection = classicHistorySelections[classicStyle] ?? MenuHistorySelection()
+        controller.preferredSizeDidChange = { [weak popover] size in popover?.contentSize = size }
+        popover.contentViewController = controller
+
+        NSApp.activate(ignoringOtherApps: true)
+        controller.prepareForPopoverPresentation()
+        popover.contentSize = controller.preferredContentSize
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        controller.view.window?.makeKey()
+        if !popover.isShown { releaseClassicPopover(popover) }
+        return popover.isShown
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard let popover = notification.object as? NSPopover else { return }
+        releaseClassicPopover(popover)
+    }
+
+    private func releaseClassicPopover(_ popover: NSPopover) {
+        guard classicPopover === popover else { return }
+        removeEventMonitor()
+        if let controller = popover.contentViewController as? MenuStatsPresenting {
+            classicHistorySelections[classicStyle] = controller.historySelection
+            controller.preferredSizeDidChange = nil
+        }
+        classicPopover = nil
+        StatsManager.shared.discardPresentationHistory()
+    }
+
+    private func closeStatistics() {
+        if let popover = classicPopover {
+            popover.performClose(nil)
+            if !popover.isShown { releaseClassicPopover(popover) }
+            return
+        }
+        guard let widgetsPanel, !widgetsPanel.isDismissing else { return }
+        constellationHistory = widgetsPanel.constellationHistory
+        removeEventMonitor()
+        widgetsPanel.dismiss()
+        StatsManager.shared.discardPresentationHistory()
     }
 
     #if DEBUG
@@ -235,10 +295,13 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         // The status item's window is attached after applicationDidFinishLaunching.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
-            self.showPopover()
+            self.showStatistics()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                guard let self, let popover = self.popover else { return }
-                NSLog("[GUI Acceptance] Statistics popover shown=\(popover.isShown) size=\(popover.contentSize) anchorVisible=\(self.statusItem?.view?.window?.isVisible ?? false)")
+                if let panel = self?.widgetsPanel {
+                    NSLog("[GUI Acceptance] Menu widgets panel shown=\(panel.isVisible) size=\(panel.frame.size)")
+                } else if let popover = self?.classicPopover {
+                    NSLog("[GUI Acceptance] Statistics popover shown=\(popover.isShown) size=\(popover.contentSize)")
+                }
             }
         }
     }
@@ -303,6 +366,16 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         if statusItem.length != width { statusItem.length = width }
     }
 }
+
+private protocol MenuStatsPresenting: AnyObject {
+    var preferredSizeDidChange: ((NSSize) -> Void)? { get set }
+    var preferredContentSize: NSSize { get }
+    var historySelection: MenuHistorySelection { get set }
+    func prepareForPopoverPresentation()
+}
+
+extension StatsPopoverViewController: MenuStatsPresenting {}
+extension GeekStatsPopoverViewController: MenuStatsPresenting {}
 
 // MARK: - 菜单栏自定义视图
 

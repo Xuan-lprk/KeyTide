@@ -33,8 +33,7 @@ final class AllTimeStatsWindowController: ReclaimingWindowController {
 
     func show() {
         let window = windowForPresentation()
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        window.presentInDock()
         window.orderFrontRegardless()
         AppDelegate.trackPageView("all_time_stats")
 

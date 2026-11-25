@@ -112,11 +112,6 @@ class StatsPopoverViewController: NSViewController {
             }
         }
         NotificationCenter.default.addObserver(self, selector: #selector(monitoringStatusChanged), name: MonitoringStatus.didChange, object: nil)
-        HelperXPCClient.shared.addStateObserver { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.updatePermissionButtonVisibility()
-            }
-        }
     }
 
     override func viewWillAppear() {
@@ -151,6 +146,7 @@ class StatsPopoverViewController: NSViewController {
     
     deinit {
         stopLiveUpdates()
+        stopKPSRefreshTimer()
         stopUpdateAvailabilityUpdates()
         appearanceObservation = nil
     }
@@ -733,7 +729,7 @@ class StatsPopoverViewController: NSViewController {
         guard !pendingStatsRefresh else { return }
         pendingStatsRefresh = true
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self, self.statsUpdateToken != nil else { return }
             self.updateStats()
             self.pulseView.emitImpulse()
             self.pendingStatsRefresh = false

@@ -39,6 +39,8 @@ let package = Package(
                 "Keytide/StatsWindowStyle.swift",
                 "Keytide/AppDetailView.swift",
                 "Keytide/KeyboardHeatmapView.swift",
+                "Keytide/KeyboardHeatmapWidget.swift",
+                "Keytide/MenuWidgetsPanel.swift",
                 "Keytide/KeyboardHeatmapRepresentable.swift",
                 "Keytide/KeyboardVisualizationViewController.swift",
                 "Keytide/KeyboardStudioTheme.swift",
@@ -50,6 +52,7 @@ let package = Package(
                 "Keytide/MouseDistanceCalibrationViewController.swift",
                 "Keytide/AllTimeStatsWindowController.swift",
                 "Keytide/MouseDistanceCalibrationWindowController.swift",
+                "Keytide/SettingsView.swift",
                 "Keytide/SettingsViewController.swift",
                 "Keytide/AppStatsWindowController.swift",
                 "Keytide/AppDelegate.swift",
@@ -72,7 +75,6 @@ let package = Package(
                 "Keytide/TypingPulseView.swift",
                 "Keytide/GeekTypingPulseView.swift",
                 "Keytide/GeekStatsPopoverViewController.swift",
-                "Keytide/MenuUIStyle.swift",
                 "Keytide/SettingsWindowController.swift",
                 "Keytide/MainWindowViewController.swift"
             ],
@@ -80,6 +82,8 @@ let package = Package(
                 "Keytide/ActivityHeatmapView.swift",
                 "Keytide/AppStatsListFilter.swift",
                 "Keytide/AppLaunchMode.swift",
+                "Keytide/MenuUIStyle.swift",
+                "Keytide/KeyboardHeatmapAppearance.swift",
                 "Keytide/ReleaseReadiness.swift",
                 "Keytide/OnboardingProgress.swift",
                 "KeytideHelper/AppStats.swift",
@@ -114,7 +118,7 @@ let package = Package(
             name: "KeytideCoreTests",
             dependencies: ["KeytideCore", "KeytideEventCore", "PostHog"],
             path: "KeytideTests",
-            sources: ["KeyReplayTests.swift", "AppStatsListFilterTests.swift", "ActivityHeatmapTests.swift", "GrowthKeyboard3DTests.swift", "AppLaunchModeTests.swift", "GrowthKeyboardTests.swift", "KeyboardUsageProgressTests.swift", "KeyboardTrackingPeriodTests.swift", "CumulativeKeyboardSnapshotTests.swift", "KeyboardLayoutTests.swift", "PhysicalKeyMappingTests.swift", "AppStatsTests.swift", "AppKeyBreakdownTests.swift", "AppDetailPresentationTests.swift", "SystemMediaKeyTests.swift", "InteractionProfileTests.swift", "AppActivityTrackerTests.swift", "AnalyticsManagerTests.swift", "StatsManagerTests.swift", "StatsModelsTests.swift", "UpdateCheckCoordinatorTests.swift"]
+            sources: ["KeyReplayTests.swift", "AppStatsListFilterTests.swift", "ActivityHeatmapTests.swift", "GrowthKeyboard3DTests.swift", "AppLaunchModeTests.swift", "GrowthKeyboardTests.swift", "KeyboardUsageProgressTests.swift", "KeyboardTrackingPeriodTests.swift", "CumulativeKeyboardSnapshotTests.swift", "KeyboardLayoutTests.swift", "PhysicalKeyMappingTests.swift", "AppStatsTests.swift", "AppKeyBreakdownTests.swift", "AppDetailPresentationTests.swift", "SystemMediaKeyTests.swift", "InteractionProfileTests.swift", "AppActivityTrackerTests.swift", "AnalyticsManagerTests.swift", "StatsManagerTests.swift", "StatsModelsTests.swift", "UpdateCheckCoordinatorTests.swift", "MenuWidgetTests.swift", "KeyboardHeatmapEffectsTests.swift"]
         )
     ]
 )

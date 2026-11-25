@@ -41,6 +41,7 @@
 		A1000034 /* UpdateCheckCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000034 /* UpdateCheckCoordinator.swift */; };
 		A1000035 /* AnalyticsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000035 /* AnalyticsManager.swift */; };
 		A1000036 /* StatsManagerLiveEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000036 /* StatsManagerLiveEnvironment.swift */; };
+		A1000037 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000037 /* SettingsView.swift */; };
 		B1000092 /* AppKeyBreakdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000092 /* AppKeyBreakdown.swift */; };
 		B1000093 /* AppDetailPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000093 /* AppDetailPresentation.swift */; };
 		B1000094 /* AppDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000094 /* AppDetailView.swift */; };
@@ -68,6 +69,9 @@
 		E10000P2 /* GeekStatsPopoverViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P2 /* GeekStatsPopoverViewController.swift */; };
 		E10000P3 /* GeekTypingPulseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P3 /* GeekTypingPulseView.swift */; };
 		E10000P4 /* MenuUIStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P4 /* MenuUIStyle.swift */; };
+		E10000P5 /* KeyboardHeatmapWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P5 /* KeyboardHeatmapWidget.swift */; };
+		E10000P7 /* MenuWidgetsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P7 /* MenuWidgetsPanel.swift */; };
+		E10000P6 /* KeyboardHeatmapAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P6 /* KeyboardHeatmapAppearance.swift */; };
 		E11000F1 /* Design/Keytide-Icon-v1/Keytide.icon in Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
 		E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Helper Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
 		F11000A1 /* ReleaseReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A1 /* ReleaseReadiness.swift */; };
@@ -136,6 +140,7 @@
 		A2000034 /* UpdateCheckCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckCoordinator.swift; sourceTree = "<group>"; };
 		A2000035 /* AnalyticsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsManager.swift; sourceTree = "<group>"; };
 		A2000036 /* StatsManagerLiveEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsManagerLiveEnvironment.swift; sourceTree = "<group>"; };
+		A2000037 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A3000001 /* Keytide.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keytide.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A3000003 /* Keytide.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Keytide.entitlements; sourceTree = "<group>"; };
@@ -166,6 +171,9 @@
 		E20000P2 /* GeekStatsPopoverViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeekStatsPopoverViewController.swift; sourceTree = "<group>"; };
 		E20000P3 /* GeekTypingPulseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeekTypingPulseView.swift; sourceTree = "<group>"; };
 		E20000P4 /* MenuUIStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuUIStyle.swift; sourceTree = "<group>"; };
+		E20000P5 /* KeyboardHeatmapWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapWidget.swift; sourceTree = "<group>"; };
+		E20000P7 /* MenuWidgetsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuWidgetsPanel.swift; sourceTree = "<group>"; };
+		E20000P6 /* KeyboardHeatmapAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapAppearance.swift; sourceTree = "<group>"; };
 		E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.icon; path = "Design/Keytide-Icon-v1/Keytide.icon"; sourceTree = SOURCE_ROOT; };
 		F21000A1 /* ReleaseReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseReadiness.swift; sourceTree = "<group>"; };
 		F21000A2 /* OnboardingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowController.swift; sourceTree = "<group>"; };
@@ -285,6 +293,9 @@
 				A2000005 /* StatsPopoverViewController.swift */,
 				E20000P1 /* TypingPulseView.swift */,
 				E20000P4 /* MenuUIStyle.swift */,
+				E20000P5 /* KeyboardHeatmapWidget.swift */,
+				E20000P7 /* MenuWidgetsPanel.swift */,
+				E20000P6 /* KeyboardHeatmapAppearance.swift */,
 				E20000P3 /* GeekTypingPulseView.swift */,
 				E20000P2 /* GeekStatsPopoverViewController.swift */,
 				A2000024 /* AppStatsWindowController.swift */,
@@ -305,6 +316,7 @@
 				C20000B2 /* StatsWindowStyle.swift */,
 				C20000B3 /* ActivityOverviewView.swift */,
 				A2000013 /* LaunchAtLoginManager.swift */,
+				A2000037 /* SettingsView.swift */,
 				A2000014 /* SettingsViewController.swift */,
 				A2000029 /* UpdateManager.swift */,
 				A2000034 /* UpdateCheckCoordinator.swift */,
@@ -489,6 +501,9 @@
 				A1000005 /* StatsPopoverViewController.swift in Sources */,
 				E10000P1 /* TypingPulseView.swift in Sources */,
 				E10000P4 /* MenuUIStyle.swift in Sources */,
+				E10000P5 /* KeyboardHeatmapWidget.swift in Sources */,
+				E10000P7 /* MenuWidgetsPanel.swift in Sources */,
+				E10000P6 /* KeyboardHeatmapAppearance.swift in Sources */,
 				E10000P3 /* GeekTypingPulseView.swift in Sources */,
 				E10000P2 /* GeekStatsPopoverViewController.swift in Sources */,
 				A1000024 /* AppStatsWindowController.swift in Sources */,
@@ -496,6 +511,7 @@
 				A1000008 /* MainWindowController.swift in Sources */,
 				A1000009 /* MainWindowViewController.swift in Sources */,
 				A1000011 /* LaunchAtLoginManager.swift in Sources */,
+				A1000037 /* SettingsView.swift in Sources */,
 				A1000012 /* SettingsViewController.swift in Sources */,
 				A1000013 /* SettingsWindowController.swift in Sources */,
 				A1000027 /* MouseDistanceCalibrationViewController.swift in Sources */,

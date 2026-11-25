@@ -2,7 +2,7 @@ import AppKit
 
 final class ActivityHeatmapView: NSView {
     // MARK: - 数据模型
-    struct DayActivity {
+    struct DayActivity: Equatable {
         let date: Date
         let keyPresses: Int
         let clicks: Int

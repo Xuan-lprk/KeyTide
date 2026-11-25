@@ -169,8 +169,10 @@ macOS input events
   - 为正式 App 提供 `StatsManager.shared`，并连接通知、Sync 展示和真实运行时依赖。
   - SwiftPM 测试不编译该文件，而是通过 `StatsManager.Environment` 创建隔离实例。
 - `Keytide/MenuBarController.swift`
-  - 管理 `NSStatusItem`、`NSPopover`、右键菜单和菜单栏更新。
-  - 常驻菜单栏项由单个 AppKit 视图绘制今日按键与点击两行数字，并与设置预览共用。弹窗按需创建和释放。
+  - 管理 `NSStatusItem`、侧滑组件面板、右键菜单和菜单栏更新。
+  - 常驻菜单栏项由单个 AppKit 视图绘制今日按键与点击两行数字，并与设置预览共用。组件面板按需创建和释放。
+- `Keytide/MenuWidgetsPanel.swift`、`KeyboardHeatmapWidget.swift`
+  - 按用户配置呈现可滚动组件，通过可见区域控制统计刷新、波形采样和热力图动画的生命周期。
 - `Keytide/StatsPopoverViewController.swift`
   - AppKit 统计 popover，部分数值/KPS 视图嵌入 SwiftUI。
   - 当前实验菜单保留 384pt 宽、系统 `.popover` 材质、今日双列总量、5×3 常用键阵列、96pt 趋势图、全宽鼠标短行及原有底栏；顶部旧 3D 特写与资源已移除，Growth 改为常用键标题行的轻量文字入口。此前整体视觉未通过，新 Input Pulse 候选不代表这些问题已解决。
@@ -231,7 +233,7 @@ macOS input events
 
 - 极客主题已从初始副本演进为单独候选，代码保留，视觉及完整正式运行未验收。2026-10-29 隔离启动崩溃已定位为 loadView 设置 appearance 时同步回调递归访问 view；GeekStatsPopoverViewController.updateAppearance 必须在 isViewLoaded 且控件已创建后执行。中英文隔离预览复测、Debug 构建及 225 项核心测试通过，不能替代正式风格切换和真实输入验收。
 
-- 菜单两套风格在 Settings 的「菜单 UI 风格」选择，`menuUIStyle.v1` 默认 standard、另一项 geek，下次打开菜单生效。保留 `StatsPopoverViewController`／`TypingPulseView` 原版；用户明确要求的独立副本为 `GeekStatsPopoverViewController`／`GeekTypingPulseView`，供 Kimi 改第二套，当前两套外观相同。修改边界见 `docs/menu-ui-styles.md`；不把副本存在视为新设计已通过。MenuBarController 每套最多缓存一个控制器，隐藏期间按原生命周期停止更新。
+- 菜单栏左键按「菜单样式」打开右侧滑入的组件面板、旧版菜单或极客版菜单。模式保存在 `menu.presentation.v1`。组件库可添加、排序、移除和独立配置组件，布局保存在 `menu.widgets.v1`。全新布局为空，旧版明确选择过的 `menuUIStyle.v1` 会迁移一次。统计组件复用标准与极客渲染器，热力图组件单独保存主题色和效果。组件面板只更新滚动区内可见的组件，关闭菜单会停止订阅和动画。
 
 当前 UI 以 AppKit 为主，并已有少量 SwiftUI 嵌入。未来可逐页迁移用户可见页面，例如：
 

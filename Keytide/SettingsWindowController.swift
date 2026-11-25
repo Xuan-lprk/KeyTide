@@ -2,13 +2,12 @@ import Cocoa
 
 final class SettingsWindowController: ReclaimingWindowController {
     static let shared = SettingsWindowController()
-    private var lastPage = 0
+    private var lastPage = SettingsPage.general
 
     private init() { super.init(window: nil) }
 
     override func makeWindow() -> NSWindow {
-        let viewController = SettingsViewController()
-        viewController.restorePage(lastPage)
+        let viewController = SettingsViewController(page: lastPage)
         let window = NSWindow(contentViewController: viewController)
         window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         window.title = NSLocalizedString("settings.windowTitle", comment: "")
@@ -26,18 +25,23 @@ final class SettingsWindowController: ReclaimingWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func windowWillClose(_ notification: Notification) {
+        (contentViewController as? SettingsViewController)?.commitThresholds()
+        super.windowWillClose(notification)
+    }
+
     override func preservePresentation() {
-        lastPage = (contentViewController as? SettingsViewController)?.selectedPage ?? 0
+        lastPage = (contentViewController as? SettingsViewController)?.selectedPage ?? .general
     }
 
     override var canReleaseWindow: Bool {
         (contentViewController as? SettingsViewController)?.fileTransferInProgress != true
     }
 
-    func show() {
+    func show(page: SettingsPage? = nil) {
         let window = windowForPresentation()
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        if let page { (window.contentViewController as? SettingsViewController)?.selectPage(page) }
+        window.presentInDock()
         window.orderFrontRegardless()
         AppDelegate.trackPageView("settings")
     }

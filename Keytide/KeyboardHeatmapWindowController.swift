@@ -37,11 +37,7 @@ final class KeyboardHeatmapWindowController: NSWindowController {
         guard let window = window else { return }
         let wasVisible = window.isVisible
         let wasMiniaturized = window.isMiniaturized
-        NSApp.activate(ignoringOtherApps: true)
-        if wasMiniaturized {
-            window.deminiaturize(nil)
-        }
-        window.makeKeyAndOrderFront(nil)
+        window.presentInDock()
         window.orderFrontRegardless()
 
         if let vc = contentViewController as? KeyboardVisualizationViewController {

@@ -8,6 +8,45 @@ class MainWindowController: NSWindowController {
     }
 }
 
+extension NSWindow {
+    /// Presents a standalone window that can be switched to from the Dock.
+    func presentInDock() {
+        AppWindowDockPresence.shared.track(self)
+        NSApp.activate(ignoringOtherApps: true)
+        if isMiniaturized { deminiaturize(nil) }
+        makeKeyAndOrderFront(nil)
+    }
+}
+
+@MainActor
+private final class AppWindowDockPresence: NSObject {
+    static let shared = AppWindowDockPresence()
+    // Track until close so hiding or minimizing a window keeps the app switchable.
+    private let windows = NSHashTable<NSWindow>.weakObjects()
+
+    private override init() {
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification, object: nil)
+    }
+
+    func track(_ window: NSWindow) {
+        windows.add(window)
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, windows.contains(window) else { return }
+        windows.remove(window)
+        guard windows.allObjects.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.windows.allObjects.isEmpty else { return }
+            guard NSApp.activationPolicy() == .regular else { return }
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+}
+
 /// Keeps the window entry point available while releasing AppKit content on close.
 class ReclaimingWindowController: NSWindowController, NSWindowDelegate {
     private var lastFrame: NSRect?
