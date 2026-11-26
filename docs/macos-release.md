@@ -24,9 +24,13 @@ Beta 使用 `1.52.2-beta.1` 形式；App 的 marketing version 保持 `1.52.2`�
 - `build/ReleasePackaging/output/Keytide.zip`
 - `build/ReleasePackaging/output/SHA256SUMS`
 
-每次打包使用独立的 `build/ReleasePackaging/run.*` 目录，保留构建日志、归档和中间产物，便于验收。不会清空整个 `build/`；这些文件均被 Git 忽略，可在确认不再需要后手动整理。仓库根目录可能留有旧版 `Keytide.dmg`，新脚本不会更新它，应使用上述输出目录。
+每次打包在 `build/ReleasePackaging/run.*` 保留构建日志、归档和生成的包。DerivedData 和打包暂存使用本机临时目录，避免文件同步服务给签名包附加 Finder 元数据。验收使用上述输出目录。
 
-DMG 和 ZIP 来自同一份嵌入 vendored Helper 后完成签名的 App，不再各自编译。脚本在生成产物前检查 Helper cdhash 是否与 vendor 记录一致；此检查不证明系统 TCC 权限或升级连续性已经通过。构建失败直接退出，不自动重试另一轮归档；失败时不要将 output 中可能保留的上一轮产物当成本次结果。
+Xcode 的 Release 配置在签署主 App 前嵌入 `vendor/KeytideHelper.app`。Xcode Organizer 的归档和本地脚本共用同一嵌入步骤。打包脚本从签名完成的归档生成 DMG 和 ZIP，检查主 App 和 Helper 的 Bundle ID、双架构、签名完整性，以及包内 Helper 与 vendor 的可执行文件逐字节一致。手动更新构建不链接或内嵌 Sparkle，脚本会拒绝带该框架的产物。构建失败直接退出，output 可能保留上一轮产物。
+
+Debug 生成 `Keytide Debug.app`，内嵌当前源码编译的开发 Helper。它使用独立的 Bundle ID、LaunchAgent、偏好域、回放目录和 Keychain 条目。首次验证开发版真实输入时，系统需要单独授予 Keytide Debug Helper 权限。Debug 的 `--debug-gui-acceptance` 只尝试连接已经注册的开发 Helper，适合仅验证 UI。
+
+生产 Helper 的二进制固定在 vendor 中。需要交付生产 Helper 代码变更时，通过 `scripts/rebuild_vendored_helper.sh` 明确更新固定的二进制和 cdhash，并验证新签名的系统授权和覆盖升级。日常主 App 更新沿用现有生产 Helper，保留正式版的 Bundle ID、安装路径和数据域。macOS 实际授权状态仍以真机验收为准。
 
 `KEYSTATS_RELEASE_VERSION=X.Y.Z` 可仅覆盖此次打包版本而不改源码；该环境变量名称为现有脚本接口。通常应先明确版本号，再运行版本准备脚本。仅验收当前版本时直接运行打包脚本，不自动递增版本或 build number。脚本会拒绝不合法版本及已开启 App 内更新的配置。
 
@@ -55,7 +59,7 @@ python3 -m unittest discover -s scripts/tests -v
 
 最终 UI 定稿后，使用最终 Release 产物验证首次安装、辅助功能授权与真实采集、退出重开、旧版覆盖升级和历史数据保留；确认实际 Helper 身份与权限连续性。另做菜单两套风格、Mac / 机械 Growth 和 Replay、窗口关闭清理、辅助功能与能耗验收。构建或 cdhash 校验不能替代这些真机检查。
 
-未来启用 Sparkle 更新时，需另行验证公私钥匹配、归档签名、feed 和真实升级，并明确授权开启 App 内更新。Developer ID / 公证也作为独立发布路径处理，本轮不变更签名身份或生成密钥。
+未来启用 Sparkle 更新时，应在单独的发布配置中恢复依赖、定义 `KEYTIDE_SPARKLE`，验证主应用与框架的签名兼容、公私钥匹配、feed 和真实升级，并明确授权开启 App 内更新。Developer ID / 公证也作为独立发布路径处理。
 
 ## 本地安装包验收
 

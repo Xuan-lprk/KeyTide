@@ -112,6 +112,33 @@ final class ReleaseReadinessTests: XCTestCase {
 
     enum Failure: Error { case activation, recovery }
 
+    func testServiceStopWaitsForLaunchdToRemoveTheOldRegistration() throws {
+        var loaded = true
+        var pauses = 0
+        var stopCount = 0
+        try HelperServiceSwitch.stopIfLoaded(isLoaded: { loaded }, stop: { stopCount += 1 }, pause: {
+            pauses += 1
+            if pauses == 2 { loaded = false }
+        })
+        XCTAssertEqual(stopCount, 1)
+        XCTAssertEqual(pauses, 2)
+        XCTAssertFalse(loaded)
+    }
+
+    func testServiceStopFailsWhenOldRegistrationDoesNotExit() {
+        XCTAssertThrowsError(try HelperServiceSwitch.stopIfLoaded(isLoaded: { true }, stop: {}, pause: {})) {
+            XCTAssertTrue($0 is HelperServiceSwitch.RemovalTimedOut)
+        }
+    }
+
+    func testServiceStopAllowsConcurrentRemoval() throws {
+        var loaded = true
+        try HelperServiceSwitch.stopIfLoaded(isLoaded: { loaded }, stop: {
+            loaded = false
+            throw Failure.recovery
+        }, pause: { XCTFail("The service already exited") })
+    }
+
     private func withFixture(_ body: (URL, URL, URL, Data) throws -> Void) throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -128,7 +155,7 @@ final class ReleaseReadinessTests: XCTestCase {
         try withFixture { _, old, new, data in
             var operations: [String] = []
             let transaction = HelperServiceSwitch(fileManager: .default, unload: { operations.append($0) }, load: { _ in XCTFail("No recovery expected") })
-            try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: true), newURL: new) {
+            try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: true), newURL: new, newLabel: "active") {
                 XCTAssertEqual(operations, ["old"])
                 operations.append("activate")
             }
@@ -144,8 +171,8 @@ final class ReleaseReadinessTests: XCTestCase {
                 XCTAssertEqual(try Data(contentsOf: url), data)
                 operations.append("restore")
             })
-            XCTAssertThrowsError(try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: true), newURL: new) { throw Failure.activation })
-            XCTAssertEqual(operations, ["old", "com.xuanlprk.KeyTide.helper", "restore"])
+            XCTAssertThrowsError(try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: true), newURL: new, newLabel: "active") { throw Failure.activation })
+            XCTAssertEqual(operations, ["old", "active", "restore"])
             XCTAssertEqual(try Data(contentsOf: old), data)
             XCTAssertFalse(FileManager.default.fileExists(atPath: new.path))
         }
@@ -155,8 +182,22 @@ final class ReleaseReadinessTests: XCTestCase {
         try withFixture { _, old, new, data in
             let previous = Data("previous-new".utf8)
             let transaction = HelperServiceSwitch(fileManager: .default, unload: { _ in }, load: { _ in XCTFail("Was not loaded") })
-            XCTAssertThrowsError(try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: false), newURL: new, previousNewData: previous) { throw Failure.activation })
+            XCTAssertThrowsError(try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: false), newURL: new, newLabel: "active", previousNewData: previous) { throw Failure.activation })
             XCTAssertEqual(try Data(contentsOf: new), previous)
+        }
+    }
+
+    func testDebugActivationFailureOnlyUnloadsTheDebugService() throws {
+        try withFixture { _, _, new, _ in
+            let debugLabel = "com.xuanlprk.KeyTide.debug.helper"
+            var unloaded: [String] = []
+            let transaction = HelperServiceSwitch(fileManager: .default, unload: { unloaded.append($0) }, load: { _ in
+                XCTFail("No legacy service to restore")
+            })
+            XCTAssertThrowsError(try transaction.perform(legacy: nil, newURL: new, newLabel: debugLabel) {
+                throw Failure.activation
+            })
+            XCTAssertEqual(unloaded, [debugLabel])
         }
     }
 
@@ -165,7 +206,7 @@ final class ReleaseReadinessTests: XCTestCase {
             let transaction = HelperServiceSwitch(fileManager: .default, unload: { label in
                 if label != "old" { throw Failure.recovery }
             }, load: { _ in XCTFail("Cannot restart old before new stopped") })
-            XCTAssertThrowsError(try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: true), newURL: new) { throw Failure.activation }) {
+            XCTAssertThrowsError(try transaction.perform(legacy: .init(url: old, label: "old", data: data, wasLoaded: true), newURL: new, newLabel: "active") { throw Failure.activation }) {
                 XCTAssertTrue($0 is HelperServiceSwitch.RecoveryFailure)
             }
             XCTAssertEqual(try Data(contentsOf: old), data)

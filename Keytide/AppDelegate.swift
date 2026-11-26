@@ -11,6 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isTerminating = false
     private var installationInProgress = false
     private var helperReconnectWorkItem: DispatchWorkItem?
+    private var canRestoreHelperRegistration = false
     private var menuBarController: MenuBarController?
     private var permissionCheckTimer: Timer?
     private var permissionCheckCount = 0
@@ -26,7 +27,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        ApplicationIdentityMigration.migrate(defaults: .standard)
+        guard Bundle.main.bundleIdentifier == HelperLocations.mainBundleId else {
+            NSLog("[AppDelegate] Bundle identifier does not match the build configuration")
+            NSApp.terminate(nil)
+            return
+        }
+        if !HelperLocations.isDevelopment {
+            ApplicationIdentityMigration.migrate(defaults: .standard)
+        }
         // 必须在 trackInstallIfNeeded()/MenuBarController 任何 UserDefaults 写入之前采集，
         // 否则 fresh install 与升级用户在后续阶段已无差别。仅作为是否触发迁移提示的判据。
         let wasPreviouslyInstalled = UserDefaults.standard.bool(forKey: analyticsInstallTrackedKey)
@@ -82,6 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
+        guard Bundle.main.bundleIdentifier == HelperLocations.mainBundleId else { return }
         // XPC invalidation releases the trackpad preview subscription. Trackpad
         // recording and its consent belong to the Helper across App launches.
         isTerminating = true
@@ -100,11 +109,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidHide(_ notification: Notification) {
         StatsManager.shared.discardPresentationHistory()
     }
-    
+
     func armGeminiPreview() {
         menuBarController?.armGeminiPreview()
     }
-
+    
     // MARK: - Helper 启动
 
     private var suppressesLegacySetupPrompts: Bool {
@@ -158,7 +167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         cancelHelperReconnect()
         HelperXPCClient.shared.setEventSink(RemoteEventProcessor.shared)
         if AppLaunchMode.current == .guiAcceptance {
-            NSLog("[GUI Acceptance] Using installed Helper only; installation, LaunchAgent management and permission migration are disabled")
+            NSLog("[GUI Acceptance] Using installed Debug Helper only; installation, LaunchAgent management and permission migration are disabled")
             connectHelperAndStart()
             return
         }
@@ -180,9 +189,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 guard let self, !self.isTerminating else { return }
                 self.installationInProgress = false
+                self.canRestoreHelperRegistration = true
                 MonitoringStatus.shared.invalidate()
                 Task { @MainActor in
-                    if !self.suppressesLegacySetupPrompts {
+                    if !HelperLocations.isDevelopment && !self.suppressesLegacySetupPrompts {
                         HelperMigrationPresenter.shared.showIfNeeded(wasPreviouslyInstalled: wasPreviouslyInstalled)
                     }
                     self.connectHelperAndStart()
@@ -208,6 +218,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         MonitoringStatus.shared.installationFailed(NSLocalizedString("monitoring.helperVersionMismatch", comment: ""))
                         return
                     }
+                    if AppLaunchMode.current == .normal { self.canRestoreHelperRegistration = true }
                     if granted {
                         self.startMonitoringWithFeedback()
                     } else {
@@ -246,10 +257,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.helperReconnectWorkItem = nil
             guard AppLaunchMode.current == .normal, !self.isTerminating, !self.installationInProgress,
                   case .disconnected = HelperXPCClient.shared.state else { return }
-            self.connectHelperAndStart()
+            self.reconnectHelper()
         }
         helperReconnectWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+    }
+
+    private func reconnectHelper() {
+        guard canRestoreHelperRegistration else {
+            connectHelperAndStart()
+            return
+        }
+        // Probe launchd once per outage; ordinary retries stay on the XPC path.
+        canRestoreHelperRegistration = false
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            do {
+                try HelperSupervisor.shared.restoreRegistrationIfMissing()
+            } catch {
+                NSLog("[AppDelegate] Failed to restore Helper registration: \(error)")
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isTerminating, !self.installationInProgress,
+                      case .disconnected = HelperXPCClient.shared.state else { return }
+                self.connectHelperAndStart()
+            }
+        }
     }
 
     private func cancelHelperReconnect() {

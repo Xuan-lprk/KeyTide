@@ -221,11 +221,11 @@ macOS input events
 
 ### 构建、普通启动与 GUI 验收模式
 
-- build-only 不等于启动授权。普通 Debug 仍执行 `HelperSupervisor.ensureInstalled()`、LaunchAgent 管理、旧权限迁移；Sparkle 还需有效公钥与显式 App 内更新开关均就绪才启动；Debug 跳过部分权限提示不表示这些副作用关闭。
+- build-only 不等于启动授权。普通 Debug 会安装和管理开发 Helper，其 Bundle ID、Mach service、LaunchAgent、偏好、回放目录和 Keychain 项与正式版独立。Debug 的主 App 为 `Keytide Debug.app`，Bundle ID 为 `com.xuanlprk.KeyTide.debug`，Helper 为 `com.xuanlprk.KeyTide.debug.helper`。旧版迁移只在 Release 中执行，Sparkle 仍需有效公钥与显式 App 内更新开关。
 - `--debug-gui-acceptance` 仅在 Debug 生效，跳过上述安装/迁移与 Sparkle 初始化。`UpdateManager` 的初始化、popover 探测、手动更新入口均有策略 guard，不能只在 AppDelegate 中跳过单例就宣称 updater 不会创建。
 - 在上述验收模式内可加 `--debug-open-keyboard` 或 `--debug-open-statistics` 请求显示相应界面；这些便捷入口仅 Debug 编译，不写 defaults，也不改变验收模式的其他数据与 Helper 边界。
-- 验收模式仍连接现有 Helper。协议版本必须等于 `KeytideHelper/HelperLocations.swift` 的 `interfaceVersion`；兼容且已有授权时仍会 `startMonitoring`，没有授权或连接失败时仅报告，不安装修复、不权限轮询或自动重连。
-- 此模式不是只读数据沙盒或全局离线模式；正式 StatsManager 持久化、Analytics consent、Sync 启动及退出时 flush 仍存在。Helper 只接受一个活动连接，不同时运行两份主 App。
+- 验收模式仍可能连接已安装的开发 Helper。协议版本必须等于 `KeytideHelper/HelperLocations.swift` 的 `interfaceVersion`；兼容且已有开发授权时仍会 `startMonitoring`，没有授权或连接失败时仅报告，不安装修复、不权限轮询或自动重连。
+- 此模式使用开发版数据域，Analytics consent 和 StatsManager 的持久化仍遵循原有逻辑。每个 Helper 只接受一个活动连接，同一配置只运行一份主 App。
 - 普通安装路径在 Helper 缺失、任一 cdhash 读取失败或 hash 不同时复制；即使 hash 相同，LaunchAgent plist 不同或服务未加载仍可能写配置/注册服务。hash 一致不能单独证明普通启动无系统改动。
 - 2026-10-25 用户授权更新来源迁移：`Keytide/Info.plist` 已指向 `Xuan-lprk/KeyTide` 的 appcast，`SUEnableAutomaticChecks = false`，上游公钥已替换为用户提供的公钥。`KeytideInAppUpdatesEnabled = false`，仅配置公钥不启用更新；未明确开启 App 内更新或公钥无效时，`UpdateManager` 初始化、探测和订阅不创建 Sparkle；普通模式的手动入口仅打开自己的 Releases 页面。不得自行生成/导出私钥、启用自动更新或发布；Keychain、CI Secret、签名和首发验收仍需相应授权。
 

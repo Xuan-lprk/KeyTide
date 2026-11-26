@@ -4,13 +4,12 @@ import Security
 import LocalAuthentication
 
 enum KeyReplayVault {
-    static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Keytide/LocalReplay", isDirectory: true)
+    static let directory = HelperLocations.applicationSupportDirectory.appendingPathComponent("LocalReplay", isDirectory: true)
     static let consentKey = "keyReplay.explicitConsent.v1"
 
     static func key(create: Bool, interactive: Bool = true) throws -> SymmetricKey {
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.xuanlprk.KeyTide.LocalReplay.v1",
+            kSecAttrService as String: HelperLocations.mainBundleId + ".LocalReplay.v1",
             kSecAttrAccount as String: "encryption", kSecAttrSynchronizable as String: false,
             kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         if !interactive {

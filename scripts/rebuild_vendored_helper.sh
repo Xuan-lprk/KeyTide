@@ -1,9 +1,8 @@
 #!/bin/bash
 # Build, sign, and vendor KeytideHelper.app into vendor/.
 #
-# Run this whenever you change KeytideHelper sources or its entitlements.
-# CI checks vendor/KeytideHelper.cdhash.txt against the committed bundle;
-# forgetting to run this after a helper change will fail the build.
+# Run for an intentional change to the production Helper. Review the
+# resulting signature and permissions before shipping that new binary.
 #
 # Usage: ./scripts/rebuild_vendored_helper.sh
 
@@ -39,7 +38,7 @@ codesign --force --sign - \
     --entitlements "$PROJECT_DIR/KeytideHelper/KeytideHelper.entitlements" \
     "$HELPER_BUILT"
 
-CDHASH=$(codesign -d -vvv "$HELPER_BUILT" 2>&1 | awk -F'=' '/^CDHash=/ {print $2}')
+CDHASH=$(codesign -d -vvv --arch arm64 "$HELPER_BUILT" 2>&1 | awk -F'=' '/^CDHash=/ {print $2}')
 if [ -z "$CDHASH" ]; then
     echo "❌ Failed to extract cdhash from signed helper"
     exit 1

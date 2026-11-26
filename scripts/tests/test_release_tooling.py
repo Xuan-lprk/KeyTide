@@ -11,6 +11,7 @@ REPO = Path(__file__).resolve().parents[2]
 STUB = r'''#!/usr/bin/env python3
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import sys
 name = Path(sys.argv[0]).name
@@ -23,19 +24,41 @@ if name == 'xcodebuild':
     if os.environ.get('FAIL_BUILD') == '1':
         sys.exit(42)
     app = Path(args[args.index('-archivePath') + 1]) / 'Products/Applications/Keytide.app'
-    (app / 'Contents/Resources/KeytideHelper.app').mkdir(parents=True)
+    helper = app / 'Contents/Resources/KeytideHelper.app'
+    for bundle, executable, identifier, payload in (
+        (app, 'Keytide', os.environ['MAIN_ID'], 'main'),
+        (helper, 'KeytideHelper', os.environ['HELPER_ID'], os.environ['ARCHIVED_HELPER']),
+    ):
+        (bundle / 'Contents/MacOS').mkdir(parents=True)
+        (bundle / 'Contents/MacOS' / executable).write_text(payload)
+        (bundle / 'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': identifier}))
     (app / 'Contents/payload').write_text('same signed app')
 elif name == 'ditto':
     if '-c' in args:
         # Assert that ZIP uses the same app that the DMG staging used.
+        assert '--norsrc' in args and '--noextattr' in args
         assert (Path(args[-2]) / 'Contents/payload').read_text() == 'same signed app'
         Path(args[-1]).write_text('zip fixture')
     else:
-        shutil.copytree(args[0], args[1])
+        shutil.copytree(args[-2], args[-1])
 elif name == 'codesign':
-    print('CDHash=' + os.environ.get('HELPER_HASH', 'fixture-hash'), file=sys.stderr)
+    if '--verify' in args:
+        if os.environ.get('FAIL_SIGNATURE') == '1':
+            sys.exit(42)
+    else:
+        print('CDHash=fixture-hash', file=sys.stderr)
+elif name == 'plutil':
+    print(plistlib.loads(Path(args[-1]).read_bytes())[args[1]])
+elif name == 'xcrun':
+    assert args[0] == 'lipo' and Path(args[1]).is_file()
+    assert args[2:] == ['-verify_arch', 'arm64', 'x86_64']
+elif name == 'otool':
+    assert args[:3] == ['-arch', 'all', '-L']
+    if os.environ.get('LINK_SPARKLE') == '1':
+        print('@rpath/Sparkle.framework/Versions/B/Sparkle')
 elif name == 'hdiutil':
     stage = Path(args[args.index('-srcfolder') + 1])
+    assert not stage.is_relative_to(Path.cwd())
     assert (stage / 'Applications').is_symlink()
     assert (stage / 'Keytide.app/Contents/payload').read_text() == 'same signed app'
     Path(args[-1]).write_text('dmg fixture')
@@ -48,27 +71,28 @@ class ReleaseToolingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / 'scripts').mkdir()
-        for script in ('release.sh', 'build_dmg.sh'):
+        for script in ('release.sh', 'build_dmg.sh', 'check_vendored_helper.sh'):
             shutil.copy2(REPO / 'scripts' / script, self.root / 'scripts' / script)
-        for script in ('check_vendored_helper.sh', 'embed_vendored_helper.sh', 'sign_app.sh'):
-            p = self.root / 'scripts' / script
-            p.write_text('#!/bin/bash\nexit 0\n')
-            p.chmod(0o755)
         (self.root / 'Keytide.xcodeproj').mkdir()
         shutil.copy2(REPO / 'Keytide.xcodeproj/project.pbxproj', self.root / 'Keytide.xcodeproj/project.pbxproj')
         (self.root / 'Keytide').mkdir()
         self.write_info(False)
         (self.root / 'vendor').mkdir()
         (self.root / 'vendor/KeytideHelper.cdhash.txt').write_text('fixture-hash\n')
+        vendor_binary = self.root / 'vendor/KeytideHelper.app/Contents/MacOS/KeytideHelper'
+        vendor_binary.parent.mkdir(parents=True)
+        vendor_binary.write_text('pinned helper')
         (self.root / 'bin').mkdir()
-        for tool in ('xcodebuild', 'ditto', 'codesign', 'hdiutil', 'git'):
+        for tool in ('xcodebuild', 'ditto', 'codesign', 'plutil', 'xcrun', 'otool', 'hdiutil', 'git'):
             p = self.root / 'bin' / tool
             p.write_text(STUB)
             p.chmod(0o755)
         self.log = self.root / 'commands.log'
         self.env = {**os.environ, 'PATH': str(self.root / 'bin') + ':' + os.environ['PATH'],
                     'COMMAND_LOG': str(self.log),
-                    'KEYSTATS_RELEASE_VERSION': '', 'FAIL_BUILD': '', 'HELPER_HASH': 'fixture-hash'}
+                    'KEYSTATS_RELEASE_VERSION': '', 'FAIL_BUILD': '', 'FAIL_SIGNATURE': '',
+                    'MAIN_ID': 'com.xuanlprk.KeyTide', 'HELPER_ID': 'com.xuanlprk.KeyTide.helper',
+                    'ARCHIVED_HELPER': 'pinned helper'}
 
     def write_info(self, enabled):
         with (self.root / 'Keytide/Info.plist').open('wb') as f:
@@ -93,6 +117,7 @@ class ReleaseToolingTests(unittest.TestCase):
         check = subprocess.run(['shasum', '-a', '256', '-c', 'SHA256SUMS'], cwd=output, capture_output=True)
         self.assertEqual(check.returncode, 0)
         self.assertEqual(self.commands().count('xcodebuild '), 1)
+        self.assertNotIn("'--sign'", self.commands())
         self.assertNotIn("KEYSTATS_SYNC_SERVICE_URL", self.commands())
         self.assertNotIn('git ', self.commands())
 
@@ -107,9 +132,25 @@ class ReleaseToolingTests(unittest.TestCase):
         old = self.root / 'build/ReleasePackaging/output/Keytide.dmg'
         old.parent.mkdir(parents=True)
         old.write_text('previous release')
-        result = self.run_script('build_dmg.sh', HELPER_HASH='changed')
+        result = self.run_script('build_dmg.sh', ARCHIVED_HELPER='changed')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(old.read_text(), 'previous release')
+        self.assertNotIn('hdiutil ', self.commands())
+
+    def test_packaging_rejects_wrong_bundle_identity_or_signature(self):
+        for overrides in (
+            {'MAIN_ID': 'com.xuanlprk.KeyTide.debug'},
+            {'HELPER_ID': 'com.xuanlprk.KeyTide.debug.helper'},
+            {'FAIL_SIGNATURE': '1'},
+        ):
+            with self.subTest(overrides=overrides):
+                self.assertNotEqual(self.run_script('build_dmg.sh', **overrides).returncode, 0)
+        self.assertNotIn('hdiutil ', self.commands())
+
+    def test_manual_update_package_rejects_a_linked_sparkle_framework(self):
+        result = self.run_script('build_dmg.sh', LINK_SPARKLE='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('must not embed or link Sparkle', result.stderr)
         self.assertNotIn('hdiutil ', self.commands())
 
     def test_invalid_configuration_fails_before_build(self):
@@ -118,7 +159,7 @@ class ReleaseToolingTests(unittest.TestCase):
                 self.assertNotEqual(self.run_script('build_dmg.sh', **env).returncode, 0)
         self.write_info(True)
         self.assertNotEqual(self.run_script('build_dmg.sh').returncode, 0)
-        self.assertEqual(self.commands(), '')
+        self.assertNotIn('xcodebuild ', self.commands())
 
     def test_explicit_version_is_passed(self):
         result = self.run_script('build_dmg.sh', KEYSTATS_RELEASE_VERSION='2.0.0')

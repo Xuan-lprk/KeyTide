@@ -1,4 +1,6 @@
 import Cocoa
+
+#if KEYTIDE_SPARKLE
 import Sparkle
 
 /// Manages Sparkle update checks and lifecycle.
@@ -200,3 +202,28 @@ extension UpdateManager: SPUUpdaterDelegate {
         setHasAvailableUpdateOnMain(false)
     }
 }
+#else
+/// The manual-update build has no dynamic updater dependency.
+final class UpdateManager {
+    static let shared = UpdateManager()
+    let usesManualReleasePage = true
+
+    private init() {}
+
+    func checkForUpdates() {
+        guard AppLaunchMode.current == .normal else { return }
+        DispatchQueue.main.async {
+            NSWorkspace.shared.open(URL(string: "https://github.com/Xuan-lprk/KeyTide/releases")!)
+        }
+    }
+
+    func probeForUpdateAvailability() {}
+
+    func addUpdateButtonStateHandler(_ handler: (UpdateButtonState) -> Void) -> UUID {
+        handler(UpdateButtonState(hasAvailableUpdate: false, canCheckForUpdates: false))
+        return UUID()
+    }
+
+    func removeUpdateButtonStateHandler(_ token: UUID) {}
+}
+#endif

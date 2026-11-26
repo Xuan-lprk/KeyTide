@@ -8,8 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		941ADB172F18D1AE00B2D578 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = 941ADB162F18D1AE00B2D578 /* PostHog */; };
-		941ADB182F18D1AE00B2D578 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 941ADB1A2F18D1AE00B2D578 /* Sparkle */; };
-		9479D3FC2F9B67480083A75E /* KeytideHelper.app in Embed Helper */ = {isa = PBXBuildFile; fileRef = 9479D3D62F9B66190083A75E /* KeytideHelper.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9479D3FC2F9B67480083A75E /* KeytideHelper.app in Embed Helper */ = {isa = PBXBuildFile; fileRef = D1000101 /* KeytideHelper.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9A10000A /* HelperSupervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A20000A /* HelperSupervisor.swift */; };
 		9A10000B /* HelperXPCClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A20000B /* HelperXPCClient.swift */; };
 		9A10000C /* RemoteEventProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A20000C /* RemoteEventProcessor.swift */; };
@@ -73,7 +72,7 @@
 		E10000P7 /* MenuWidgetsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P7 /* MenuWidgetsPanel.swift */; };
 		E10000P6 /* KeyboardHeatmapAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P6 /* KeyboardHeatmapAppearance.swift */; };
 		E11000F1 /* Design/Keytide-Icon-v1/Keytide.icon in Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
-		E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Helper Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
+		E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
 		F11000A1 /* ReleaseReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A1 /* ReleaseReadiness.swift */; };
 		F11000A2 /* OnboardingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A2 /* OnboardingWindowController.swift */; };
 		F11000A3 /* OnboardingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21000A3 /* OnboardingProgress.swift */; };
@@ -106,6 +105,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D1000101 /* KeytideHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; name = KeytideHelper.app; path = "$(KEYTIDE_EMBEDDED_HELPER_SOURCE)"; sourceTree = "<absolute>"; };
 		9479D3D62F9B66190083A75E /* KeytideHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KeytideHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A20000A /* HelperSupervisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperSupervisor.swift; sourceTree = "<group>"; };
 		9A20000B /* HelperXPCClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperXPCClient.swift; sourceTree = "<group>"; };
@@ -186,25 +186,25 @@
 		9479D3F72F9B665D0083A75E /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AppActivityTracker.swift,
+				AppStats.swift,
+				CumulativeKeyboardSnapshot.swift,
+				GrowthKeyboardPresentation.swift,
+				HelperKeyReplayWriter.swift,
 				HelperLocations.swift,
 				HelperPayloadFields.swift,
 				HelperProtocols.swift,
-				SystemMediaKey.swift,
-				TrackpadRecording.swift,
 				InputEventSemantics.swift,
-				KeyReplayStore.swift,
-				HelperKeyReplayWriter.swift,
-				AppStats.swift,
-				AppActivityTracker.swift,
-				StatsModels.swift,
-				StatsManager.swift,
 				InteractionProfile.swift,
-				PhysicalKeyMapping.swift,
 				KeyboardLayout.swift,
 				KeyboardTrackingPeriod.swift,
 				KeyboardUsageProgress.swift,
-				CumulativeKeyboardSnapshot.swift,
-				GrowthKeyboardPresentation.swift,
+				KeyReplayStore.swift,
+				PhysicalKeyMapping.swift,
+				StatsManager.swift,
+				StatsModels.swift,
+				SystemMediaKey.swift,
+				TrackpadRecording.swift,
 			);
 			target = A6000001 /* Keytide */;
 		};
@@ -236,7 +236,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				941ADB172F18D1AE00B2D578 /* PostHog in Frameworks */,
-				941ADB182F18D1AE00B2D578 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -380,7 +379,6 @@
 			name = Keytide;
 			packageProductDependencies = (
 				941ADB162F18D1AE00B2D578 /* PostHog */,
-				941ADB1A2F18D1AE00B2D578 /* Sparkle */,
 			);
 			productName = Keytide;
 			productReference = A3000001 /* Keytide.app */;
@@ -418,7 +416,6 @@
 			mainGroup = A5000001;
 			packageReferences = (
 				941ADB152F18D1AE00B2D578 /* XCRemoteSwiftPackageReference "posthog-ios" */,
-				941ADB192F18D1AE00B2D578 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			productRefGroup = A5000003 /* Products */;
 			projectDirPath = "";
@@ -435,7 +432,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Helper Resources */,
+				E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -565,7 +562,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = GMLVASTPGG;
+				DEVELOPMENT_TEAM = 3839Y9532A;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -576,13 +573,14 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.52.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide.helper;
+				KEYTIDE_HELPER_DISPLAY_NAME = "Keytide Debug Helper";
+				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide.debug.helper;
 				PRODUCT_NAME = KeytideHelper;
 				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KEYTIDE_HELPER";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KEYTIDE_HELPER";
 			};
 			name = Debug;
 		};
@@ -596,6 +594,7 @@
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 2;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = "";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -606,12 +605,14 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 1.52.1;
+				KEYTIDE_HELPER_DISPLAY_NAME = "Keytide Helper";
 				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide.helper;
 				PRODUCT_NAME = KeytideHelper;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";
 				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KEYTIDE_HELPER";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) KEYTIDE_HELPER";
 			};
 			name = Release;
 		};
@@ -743,7 +744,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 52;
-				DEVELOPMENT_TEAM = GMLVASTPGG;
+				DEVELOPMENT_TEAM = 3839Y9532A;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Keytide/Info.plist;
@@ -754,8 +755,9 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.52.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				KEYTIDE_EMBEDDED_HELPER_SOURCE = "$(BUILT_PRODUCTS_DIR)/KeytideHelper.app";
+				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide.debug;
+				PRODUCT_NAME = "Keytide Debug";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -768,10 +770,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Keytide/Keytide.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 52;
-				DEVELOPMENT_TEAM = GMLVASTPGG;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Keytide/Info.plist;
@@ -782,6 +784,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.52.2;
+				KEYTIDE_EMBEDDED_HELPER_SOURCE = "$(SRCROOT)/vendor/KeytideHelper.app";
 				PRODUCT_BUNDLE_IDENTIFIER = com.xuanlprk.KeyTide;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -830,14 +833,6 @@
 				minimumVersion = 3.0.0;
 			};
 		};
-		941ADB192F18D1AE00B2D578 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sparkle-project/Sparkle";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.0.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -845,11 +840,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 941ADB152F18D1AE00B2D578 /* XCRemoteSwiftPackageReference "posthog-ios" */;
 			productName = PostHog;
-		};
-		941ADB1A2F18D1AE00B2D578 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 941ADB192F18D1AE00B2D578 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

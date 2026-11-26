@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A6000001"
-            BuildableName = "Keytide.app"
+            BuildableName = "Keytide Debug.app"
             BlueprintName = "Keytide"
             ReferencedContainer = "container:Keytide.xcodeproj">
          </BuildableReference>

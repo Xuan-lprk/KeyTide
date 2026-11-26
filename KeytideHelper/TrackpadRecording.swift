@@ -349,8 +349,7 @@ final class TrackpadRecording {
 #endif
 
 enum TrackpadReplayLibrary {
-    static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Keytide/TrackpadReplay", isDirectory: true)
+    static let directory = HelperLocations.applicationSupportDirectory.appendingPathComponent("TrackpadReplay", isDirectory: true)
     private static let readQueue = DispatchQueue(label: "Keytide.TrackpadReplayLibrary", qos: .userInitiated)
 
     static func load(day: Date, directory: URL = TrackpadReplayLibrary.directory,
@@ -383,7 +382,7 @@ enum TrackpadReplayLibrary {
 
     fileprivate static func localKey(create: Bool, allowInteraction: Bool = true) throws -> SymmetricKey {
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.xuanlprk.KeyTide.TrackpadReplay.v1", kSecAttrAccount as String: "encryption",
+            kSecAttrService as String: HelperLocations.mainBundleId + ".TrackpadReplay.v1", kSecAttrAccount as String: "encryption",
             kSecAttrSynchronizable as String: false, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         if !allowInteraction {
             let context = LAContext()

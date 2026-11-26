@@ -42,6 +42,8 @@ final class MonitoringStatus {
 
 /// Transaction boundary: injected service operations allow failure testing without launchd.
 struct HelperServiceSwitch {
+    struct RemovalTimedOut: Error {}
+
     struct Legacy {
         let url: URL
         let label: String
@@ -57,7 +59,25 @@ struct HelperServiceSwitch {
     let unload: (String) throws -> Void
     let load: (URL) throws -> Void
 
-    func perform(legacy: Legacy?, newURL: URL, previousNewData: Data? = nil, activate: () throws -> Void) throws {
+    static func stopIfLoaded(isLoaded: () -> Bool, stop: () throws -> Void, pause: () -> Void) throws {
+        guard isLoaded() else { return }
+        do {
+            try stop()
+        } catch {
+            // launchd may have already removed the service between print and bootout.
+            if isLoaded() { throw error }
+            return
+        }
+        // A successful bootout can return before the job finishes shutting down.
+        for _ in 0..<50 {
+            guard isLoaded() else { return }
+            pause()
+        }
+        if isLoaded() { throw RemovalTimedOut() }
+    }
+
+    func perform(legacy: Legacy?, newURL: URL, newLabel: String,
+                 previousNewData: Data? = nil, activate: () throws -> Void) throws {
         if let legacy, legacy.wasLoaded { try unload(legacy.label) }
         do {
             try activate()
@@ -66,7 +86,7 @@ struct HelperServiceSwitch {
             let primary = error
             // Never reload the old service unless the new one has been stopped.
             do {
-                try unload("com.xuanlprk.KeyTide.helper")
+                try unload(newLabel)
                 if let previousNewData { try previousNewData.write(to: newURL, options: .atomic) }
                 else if fileManager.fileExists(atPath: newURL.path) { try fileManager.removeItem(at: newURL) }
                 if let legacy {

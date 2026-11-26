@@ -1,226 +1,66 @@
-import Cocoa
+import SwiftUI
 
-private func resolvedCGColor(_ color: NSColor, for view: NSView) -> CGColor {
-    var resolved: CGColor = color.cgColor
-    view.effectiveAppearance.performAsCurrentDrawingAppearance {
-        resolved = color.cgColor
-    }
-    return resolved
-}
-
-private func resolvedCGColor(_ color: NSColor, alpha: CGFloat, for view: NSView) -> CGColor {
-    var resolved: CGColor = color.cgColor
-    view.effectiveAppearance.performAsCurrentDrawingAppearance {
-        resolved = color.withAlphaComponent(alpha).cgColor
-    }
-    return resolved
-}
-
-final class MouseDistanceCalibrationViewController: NSViewController {
-    private var titleLabel: NSTextField!
-    private var instructionLabel: NSTextField!
-    private var pixelLabel: NSTextField!
-    private var statusLabel: NSTextField!
-    private var resultLabel: NSTextField!
-    private var retryButton: NSButton!
-    private var closeButton: NSButton!
-    private var pixelContainer: NSView!
+/// The window owns the calibration session. The SwiftUI view only displays its state.
+final class MouseDistanceCalibrationViewController: NSHostingController<MouseDistanceCalibrationView> {
+    private let model: MouseDistanceCalibrationModel
     private var updateTimer: Timer?
-    private var appearanceObservation: NSKeyValueObservation?
-    private var hasCompleted = false
     private var calibrationGeneration = 0
     private var requestingProgress = false
 
-    override func loadView() {
-        let mainView = AppearanceTrackingView(frame: NSRect(x: 0, y: 0, width: 360, height: 240))
-        mainView.onEffectiveAppearanceChange = { [weak self] in
-            self?.updateAppearance()
-        }
-        mainView.wantsLayer = true
-        mainView.layer?.backgroundColor = resolvedCGColor(NSColor.windowBackgroundColor, for: mainView)
-        view = mainView
+    init() {
+        let model = MouseDistanceCalibrationModel()
+        self.model = model
+        super.init(rootView: MouseDistanceCalibrationView(model: model))
+        model.retry = { [weak self] in self?.prepareForDisplay() }
+        model.close = { [weak self] in self?.view.window?.close() }
     }
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        setupUI()
-        updateAppearance()
-        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async {
-                self?.updateAppearance()
-            }
-        }
-    }
-
-    override func viewWillAppear() {
-        super.viewWillAppear()
-        updateAppearance()
-    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
-        cleanup()
+        cancelCalibration()
     }
 
-    deinit {
-        updateTimer?.invalidate()
-        appearanceObservation = nil
-    }
+    deinit { updateTimer?.invalidate() }
 
     func prepareForDisplay() {
-        if !isViewLoaded {
-            _ = view
-        }
-        restartCalibration()
-    }
-
-    private func setupUI() {
-        titleLabel = NSTextField(labelWithString: NSLocalizedString("settings.mouseDistanceCalibration.title", comment: ""))
-        titleLabel.font = NSFont.systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.alignment = .center
-
-        instructionLabel = NSTextField(wrappingLabelWithString: NSLocalizedString("settings.mouseDistanceCalibration.instruction", comment: ""))
-        instructionLabel.font = NSFont.systemFont(ofSize: 12)
-        instructionLabel.textColor = .secondaryLabelColor
-        instructionLabel.alignment = .center
-
-        pixelLabel = NSTextField(labelWithString: formatPixels(0))
-        pixelLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 28, weight: .medium)
-        pixelLabel.alignment = .center
-
-        pixelContainer = NSView()
-        pixelContainer.wantsLayer = true
-        pixelContainer.layer?.cornerRadius = 10
-        pixelContainer.layer?.borderWidth = 0.5
-        pixelContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        pixelLabel.translatesAutoresizingMaskIntoConstraints = false
-        pixelContainer.addSubview(pixelLabel)
-        NSLayoutConstraint.activate([
-            pixelLabel.centerXAnchor.constraint(equalTo: pixelContainer.centerXAnchor),
-            pixelLabel.centerYAnchor.constraint(equalTo: pixelContainer.centerYAnchor)
-        ])
-
-        statusLabel = NSTextField(labelWithString: NSLocalizedString("settings.mouseDistanceCalibration.status.waiting", comment: ""))
-        statusLabel.font = NSFont.systemFont(ofSize: 12)
-        statusLabel.textColor = .secondaryLabelColor
-        statusLabel.alignment = .center
-
-        resultLabel = NSTextField(wrappingLabelWithString: "")
-        resultLabel.font = NSFont.systemFont(ofSize: 12)
-        resultLabel.textColor = .secondaryLabelColor
-        resultLabel.alignment = .center
-        resultLabel.isHidden = true
-
-        retryButton = NSButton(title: NSLocalizedString("settings.mouseDistanceCalibration.retry", comment: ""), target: self, action: #selector(retryCalibration))
-        retryButton.bezelStyle = .rounded
-        retryButton.controlSize = .regular
-
-        closeButton = NSButton(title: NSLocalizedString("settings.mouseDistanceCalibration.cancel", comment: ""), target: self, action: #selector(closeWindow))
-        closeButton.bezelStyle = .rounded
-        closeButton.controlSize = .regular
-
-        let buttonRow = NSStackView(views: [retryButton, closeButton])
-        buttonRow.orientation = .horizontal
-        buttonRow.alignment = .centerY
-        buttonRow.spacing = 8
-
-        let contentStack = NSStackView(views: [
-            titleLabel,
-            instructionLabel,
-            pixelContainer,
-            statusLabel,
-            resultLabel,
-            buttonRow
-        ])
-        contentStack.orientation = .vertical
-        contentStack.alignment = .centerX
-        contentStack.spacing = 10
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-
-        view.addSubview(contentStack)
-
-        NSLayoutConstraint.activate([
-            contentStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
-            contentStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            contentStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -16),
-            pixelContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
-            pixelContainer.heightAnchor.constraint(equalToConstant: 64),
-            instructionLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
-            resultLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor)
-        ])
-    }
-
-    private func updateAppearance() {
-        view.layer?.backgroundColor = resolvedCGColor(NSColor.windowBackgroundColor, for: view)
-        view.window?.backgroundColor = NSColor.windowBackgroundColor
-        pixelContainer?.layer?.backgroundColor = resolvedCGColor(NSColor.controlBackgroundColor, alpha: 0.7, for: pixelContainer ?? view)
-        pixelContainer?.layer?.borderColor = resolvedCGColor(NSColor.separatorColor, alpha: 0.18, for: pixelContainer ?? view)
-    }
-
-    private func restartCalibration() {
         calibrationGeneration &+= 1
         requestingProgress = false
         BackgroundInputController.shared.request(.cancelCalibration) { _, _ in }
-        hasCompleted = false
-        resultLabel.isHidden = true
-        resultLabel.stringValue = ""
-        resultLabel.textColor = .secondaryLabelColor
-        statusLabel.stringValue = NSLocalizedString("settings.mouseDistanceCalibration.status.waiting", comment: "")
-        pixelLabel.stringValue = formatPixels(0)
-        updateCloseButtonTitle()
-        startTimer()
+        model.state = .waiting
 
         let generation = calibrationGeneration
         let meters = (try? JSONEncoder().encode(0.10)) ?? Data()
         BackgroundInputController.shared.request(.beginCalibration, data: meters) { [weak self] data, ok in
             guard let self, self.calibrationGeneration == generation else { return }
+            self.stopTimer()
             guard ok, let data, let result = try? JSONDecoder().decode(InputCalibrationResult.self, from: data) else {
-                self.handleCompletion(.failure(pixels: 0)); return
+                self.model.state = .failed(pixels: 0)
+                return
             }
             if let factor = result.factor {
-                self.handleCompletion(.success(pixels: result.pixels, factor: factor))
+                self.model.state = .succeeded(pixels: result.pixels, factor: factor)
             } else {
-                self.handleCompletion(.failure(pixels: result.pixels))
+                self.model.state = .failed(pixels: result.pixels)
             }
         }
+        startTimer()
     }
 
-    private func handleCompletion(_ result: StatsManager.MouseDistanceCalibrationResult) {
-        hasCompleted = true
+    func cancelCalibration() {
+        guard updateTimer != nil else { return }
         stopTimer()
-        switch result {
-        case .success(let pixels, let factor):
-            pixelLabel.stringValue = formatPixels(pixels)
-            statusLabel.stringValue = NSLocalizedString("settings.mouseDistanceCalibration.success.title", comment: "")
-            let pixelText = formatPixels(pixels)
-            let factorText = String(format: "%.3f×", factor)
-            resultLabel.stringValue = String(
-                format: NSLocalizedString("settings.mouseDistanceCalibration.success.message", comment: ""),
-                pixelText,
-                factorText
-            )
-            resultLabel.textColor = .secondaryLabelColor
-            resultLabel.isHidden = false
-        case .failure(let pixels):
-            pixelLabel.stringValue = formatPixels(pixels)
-            statusLabel.stringValue = NSLocalizedString("settings.mouseDistanceCalibration.failure.title", comment: "")
-            resultLabel.stringValue = NSLocalizedString("settings.mouseDistanceCalibration.failure.message", comment: "")
-            resultLabel.textColor = .systemRed
-            resultLabel.isHidden = false
-        }
-        updateCloseButtonTitle()
+        calibrationGeneration &+= 1
+        requestingProgress = false
+        BackgroundInputController.shared.request(.cancelCalibration) { _, _ in }
     }
 
     private func startTimer() {
-        updateTimer?.invalidate()
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.refreshLiveStatus()
-        }
-        if let timer = updateTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
+        stopTimer()
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.refreshLiveStatus() }
+        updateTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
         refreshLiveStatus()
     }
 
@@ -230,44 +70,127 @@ final class MouseDistanceCalibrationViewController: NSViewController {
     }
 
     private func refreshLiveStatus() {
-        guard !hasCompleted, !requestingProgress else { return }
+        guard !requestingProgress else { return }
         requestingProgress = true
         let generation = calibrationGeneration
         BackgroundInputController.shared.request(.calibrationPixels) { [weak self] data, ok in
             guard let self, self.calibrationGeneration == generation else { return }
             self.requestingProgress = false
-            guard !self.hasCompleted, ok, let data,
+            guard self.updateTimer != nil, ok, let data,
                   let progress = try? JSONDecoder().decode(InputCalibrationProgress.self, from: data) else { return }
-            let pixelText = self.formatPixels(progress.pixels)
-            self.pixelLabel.stringValue = pixelText
-            self.statusLabel.stringValue = progress.moving ? String(format:
-                NSLocalizedString("settings.mouseDistanceCalibration.status.moving", comment: ""), pixelText)
-                : NSLocalizedString("settings.mouseDistanceCalibration.status.waiting", comment: "")
+            self.model.state = .measuring(pixels: progress.pixels, moving: progress.moving)
+        }
+    }
+}
+
+final class MouseDistanceCalibrationModel: ObservableObject {
+    enum State: Equatable {
+        case waiting
+        case measuring(pixels: Double, moving: Bool)
+        case succeeded(pixels: Double, factor: Double)
+        case failed(pixels: Double)
+
+        var pixels: Double {
+            switch self {
+            case .waiting: return 0
+            case .measuring(let pixels, _), .succeeded(let pixels, _), .failed(let pixels): return pixels
+            }
+        }
+
+        var isFinished: Bool {
+            switch self {
+            case .succeeded, .failed: return true
+            case .waiting, .measuring: return false
+            }
         }
     }
 
-    private func cleanup() {
-        stopTimer()
-        calibrationGeneration &+= 1
-        requestingProgress = false
-        BackgroundInputController.shared.request(.cancelCalibration) { _, _ in }
+    @Published var state = State.waiting
+    var retry: () -> Void = {}
+    var close: () -> Void = {}
+}
+
+struct MouseDistanceCalibrationView: View {
+    @ObservedObject var model: MouseDistanceCalibrationModel
+
+    private var pixelText: String { String(format: "%.0f px", model.state.pixels) }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("settings.mouseDistanceCalibration.title")
+                .font(.system(size: 15, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
+            Text("settings.mouseDistanceCalibration.instruction")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(pixelText)
+                .font(.system(size: 28, weight: .medium).monospacedDigit())
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.7))
+                }
+            Text(statusText).foregroundStyle(.secondary)
+            result
+            HStack(spacing: 8) {
+                Button("settings.mouseDistanceCalibration.retry", action: model.retry)
+                Button(model.state.isFinished ? "settings.mouseDistanceCalibration.close"
+                       : "settings.mouseDistanceCalibration.cancel", action: model.close)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12))
+        .multilineTextAlignment(.center)
+        .padding(16)
+        .frame(minWidth: 360, minHeight: 240)
     }
 
-    private func updateCloseButtonTitle() {
-        let titleKey = hasCompleted ? "settings.mouseDistanceCalibration.close" : "settings.mouseDistanceCalibration.cancel"
-        closeButton.title = NSLocalizedString(titleKey, comment: "")
+    private var statusText: String {
+        switch model.state {
+        case .measuring(_, true):
+            return String(format: NSLocalizedString("settings.mouseDistanceCalibration.status.moving", comment: ""), pixelText)
+        case .waiting, .measuring:
+            return NSLocalizedString("settings.mouseDistanceCalibration.status.waiting", comment: "")
+        case .succeeded:
+            return NSLocalizedString("settings.mouseDistanceCalibration.success.title", comment: "")
+        case .failed:
+            return NSLocalizedString("settings.mouseDistanceCalibration.failure.title", comment: "")
+        }
     }
 
-    private func formatPixels(_ pixels: Double) -> String {
-        return String(format: "%.0f px", pixels)
-    }
-
-    @objc private func retryCalibration() {
-        restartCalibration()
-    }
-
-    @objc private func closeWindow() {
-        cleanup()
-        view.window?.close()
+    @ViewBuilder private var result: some View {
+        switch model.state {
+        case .succeeded(_, let factor):
+            Text(String(
+                format: NSLocalizedString("settings.mouseDistanceCalibration.success.message", comment: ""),
+                pixelText, String(format: "%.3f×", factor)
+            ))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        case .failed:
+            Text("settings.mouseDistanceCalibration.failure.message")
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        case .waiting, .measuring:
+            EmptyView()
+        }
     }
 }
+
+#if DEBUG
+struct MouseDistanceCalibrationView_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            preview(.waiting).previewDisplayName("Waiting")
+            preview(.succeeded(pixels: 625, factor: 1.14)).previewDisplayName("Complete")
+            preview(.failed(pixels: 0)).preferredColorScheme(.dark).previewDisplayName("Unavailable")
+        }
+    }
+
+    private static func preview(_ state: MouseDistanceCalibrationModel.State) -> some View {
+        let model = MouseDistanceCalibrationModel()
+        model.state = state
+        return MouseDistanceCalibrationView(model: model).frame(width: 360, height: 260)
+    }
+}
+#endif

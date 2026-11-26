@@ -18,7 +18,7 @@ swift test --package-path KeytideHelper \
 
 新增 SwiftPM 测试文件时，同时在主工程 `PBXFileSystemSynchronizedBuildFileExceptionSet` 的 helper 排除项中列出具体相对路径；Xcode 的同步目录不会自动把整个 `Tests` 目录当作测试 target。
 
-独立的是**源码构建和测试边界**。SwiftPM 输出的是开发用裸可执行文件，不是可直接替换已安装服务的签名 `.app`，也没有自动安装、LaunchAgent 或授权步骤。不要用 `swift run` 验证正在使用的采集服务，以免与现有 Mach service 冲突。正式 App 打包仍使用 Xcode 的 `helper` target，以及原有 vendored helper、签名和嵌入脚本。
+SwiftPM 用于构建和测试采集源码。它的裸可执行文件缺少 App bundle 身份，入口会在连接 launchd 前退出。Xcode Debug 内嵌源码编译的开发 Helper，Release 内嵌固定签名的 `vendor/KeytideHelper.app`。两者的打包与升级流程见 [macOS 发布流程](../docs/macos-release.md)。
 
 ## 职责与依赖
 
@@ -38,11 +38,11 @@ swift test --package-path KeytideHelper \
 
 「退出后继续统计」默认开启。欢迎引导和通用设置可修改同一个选项，已有的关闭选择会保留。主 App 完成权限设置、开始采集后，才注册退出后采集。随后用户级 LaunchAgent 持续运行 Helper，并在下次登录时恢复。Helper 恢复时检查用户选择、已生效状态和启动标记。键盘、触控板细节记录仍分别授权。没有界面连接时，Helper 停止推送展示快照和实时预览。后台开关关闭后，退出主 App 会停止采集，Helper 在空闲后退出。
 
-保持现有身份：
+Release 保持原有身份。
 
 - 主 App：`com.xuanlprk.KeyTide`
 - Helper／Mach service／LaunchAgent：`com.xuanlprk.KeyTide.helper`
 - XPC interface version：`4`
 - 安装位置：`~/Library/Application Support/Keytide/Helper/KeytideHelper.app`
 
-签名校验没有放宽，仍只接受既有主 App identity、有效签名和相同用户 UID。构建本包不会运行安装器，不应据此宣称已验证 TCC 授权连续性或真实 XPC 生命周期。
+Debug 的主 App 为 `com.xuanlprk.KeyTide.debug`，Helper／Mach service／LaunchAgent 为 `com.xuanlprk.KeyTide.debug.helper`，安装目录为 `~/Library/Application Support/Keytide Debug/Helper/`。它从独立偏好域和回放目录读取数据。两个版本各自校验同一用户下对应客户端的签名与 Bundle ID，系统辅助功能授权分别授予。

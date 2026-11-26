@@ -2,8 +2,7 @@
 # Verify vendor/KeytideHelper.app's actual cdhash matches the value
 # recorded in vendor/KeytideHelper.cdhash.txt.
 #
-# Run from CI and from local build_dmg.sh to detect a stale or
-# corrupted vendored helper before any further build work.
+# Check the pinned bundle's arm64 identity on both Intel and Apple Silicon.
 #
 # Exit 0 on match, 1 on mismatch / missing files.
 
@@ -27,7 +26,7 @@ if [ ! -f "$EXPECTED_FILE" ]; then
 fi
 
 EXPECTED=$(tr -d '[:space:]' < "$EXPECTED_FILE")
-ACTUAL=$(codesign -d -vvv "$VENDOR_APP" 2>&1 | awk -F'=' '/^CDHash=/ {print $2}' | tr -d '[:space:]')
+ACTUAL=$(codesign -d -vvv --arch arm64 "$VENDOR_APP" 2>&1 | awk -F'=' '/^CDHash=/ {print $2}' | tr -d '[:space:]')
 
 if [ -z "$ACTUAL" ]; then
     echo "❌ Failed to extract cdhash from $VENDOR_APP (codesign -d failed?)"
@@ -39,8 +38,7 @@ if [ "$EXPECTED" != "$ACTUAL" ]; then
     echo "   Expected (vendor/KeytideHelper.cdhash.txt): $EXPECTED"
     echo "   Actual   (vendor/KeytideHelper.app):        $ACTUAL"
     echo ""
-    echo "   The vendored bundle was modified without updating cdhash.txt,"
-    echo "   or the helper sources changed without re-vendoring. Run:"
+    echo "   The vendored bundle no longer matches the pinned identity. For an intended update, run:"
     echo "     ./scripts/rebuild_vendored_helper.sh"
     echo "   then commit both vendor/KeytideHelper.app and vendor/KeytideHelper.cdhash.txt."
     exit 1

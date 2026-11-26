@@ -27,7 +27,10 @@ PACKAGING_DIR="$PROJECT_DIR/build/ReleasePackaging"
 OUTPUT_DIR="$PACKAGING_DIR/output"
 mkdir -p "$PACKAGING_DIR"
 RUN_DIR="$(mktemp -d "$PACKAGING_DIR/run.XXXXXX")"
-STAGING_DIR="$RUN_DIR/dmg"
+# File providers may add Finder metadata to transient signed bundles.
+TEMP_BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/keytide-package.XXXXXX")"
+trap 'rm -rf "$TEMP_BUILD_DIR"' EXIT
+STAGING_DIR="$TEMP_BUILD_DIR/dmg"
 ARCHIVE_PATH="$RUN_DIR/Keytide.xcarchive"
 mkdir -p "$STAGING_DIR"
 echo "Packaging log and intermediate files: $RUN_DIR"
@@ -39,7 +42,7 @@ fi
 xcodebuild -project Keytide.xcodeproj \
     -scheme Keytide -configuration Release \
     -destination 'generic/platform=macOS' \
-    -derivedDataPath "$RUN_DIR/DerivedData" \
+    -derivedDataPath "$TEMP_BUILD_DIR/DerivedData" \
     -archivePath "$ARCHIVE_PATH" \
     archive CODE_SIGN_IDENTITY="-" \
     ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
@@ -51,23 +54,35 @@ if [[ ! -d "$APP_PATH" ]]; then
     exit 1
 fi
 
-ditto "$APP_PATH" "$STAGING_DIR/Keytide.app"
-"$SCRIPT_DIR/embed_vendored_helper.sh" "$STAGING_DIR/Keytide.app"
-"$SCRIPT_DIR/sign_app.sh" "$STAGING_DIR/Keytide.app"
-
-# A UI-only release must retain the vendored Helper identity after packaging.
-EXPECTED_HASH="$(tr -d '[:space:]' < vendor/KeytideHelper.cdhash.txt)"
-ACTUAL_HASH="$(codesign -d -vvv "$STAGING_DIR/Keytide.app/Contents/Resources/KeytideHelper.app" 2>&1 | awk -F= '/^CDHash=/ {print $2}')"
-if [[ -z "$ACTUAL_HASH" || "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
-    echo "Packaged Helper cdhash differs from vendor; stop for signature/permission review." >&2
+# The Release target embeds the signed vendor before Xcode signs the outer app.
+# Stage that archive verbatim and reject a foreign app or Helper before packaging.
+STAGED_APP="$STAGING_DIR/Keytide.app"
+STAGED_HELPER="$STAGED_APP/Contents/Resources/KeytideHelper.app"
+ditto --norsrc --noextattr --noacl "$APP_PATH" "$STAGED_APP"
+if [[ "$(plutil -extract CFBundleIdentifier raw "$STAGED_APP/Contents/Info.plist")" != com.xuanlprk.KeyTide ||
+      "$(plutil -extract CFBundleIdentifier raw "$STAGED_HELPER/Contents/Info.plist")" != com.xuanlprk.KeyTide.helper ]]; then
+    echo "Unexpected Release app or Helper bundle identifier." >&2
     exit 1
 fi
+if ! cmp -s vendor/KeytideHelper.app/Contents/MacOS/KeytideHelper "$STAGED_HELPER/Contents/MacOS/KeytideHelper"; then
+    echo "Archived Helper executable differs from the signed vendor." >&2
+    exit 1
+fi
+LINKED_LIBRARIES="$(otool -arch all -L "$STAGED_APP/Contents/MacOS/Keytide")"
+if [[ -e "$STAGED_APP/Contents/Frameworks/Sparkle.framework" || "$LINKED_LIBRARIES" == *Sparkle.framework* ]]; then
+    echo "Manual-update builds must not embed or link Sparkle." >&2
+    exit 1
+fi
+xcrun lipo "$STAGED_APP/Contents/MacOS/Keytide" -verify_arch arm64 x86_64
+xcrun lipo "$STAGED_HELPER/Contents/MacOS/KeytideHelper" -verify_arch arm64 x86_64
+codesign --verify --deep --strict --all-architectures -R='identifier "com.xuanlprk.KeyTide"' "$STAGED_APP"
+codesign --verify --strict --all-architectures -R='identifier "com.xuanlprk.KeyTide.helper"' "$STAGED_HELPER"
 
 # Both distribution formats contain the very same staged, signed app.
 ln -s /Applications "$STAGING_DIR/Applications"
 hdiutil create -volname Keytide -srcfolder "$STAGING_DIR" \
     -ov -format UDZO "$RUN_DIR/Keytide.dmg"
-ditto -c -k --sequesterRsrc --keepParent \
+ditto -c -k --norsrc --noextattr --noacl --keepParent \
     "$STAGING_DIR/Keytide.app" "$RUN_DIR/Keytide.zip"
 (
     cd "$RUN_DIR"

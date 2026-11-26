@@ -6,10 +6,12 @@ import Security
 /// - 写入 LaunchAgent plist 并 bootstrap
 final class HelperSupervisor {
     static let shared = HelperSupervisor()
+    private let registrationLock = NSLock()
     private init() {}
 
     enum SupervisorError: Error {
         case missingBundledHelper
+        case unexpectedBundleIdentity
         case copyFailed(Error)
         case plistWriteFailed(Error)
         case launchctlFailed(Int32, String)
@@ -17,12 +19,12 @@ final class HelperSupervisor {
     }
 
     func ensureInstalled() throws {
+        registrationLock.lock()
+        defer { registrationLock.unlock() }
         let fm = FileManager.default
-        try fm.createDirectory(at: HelperLocations.installDir, withIntermediateDirectories: true)
 
-        guard let bundledHelper = bundledHelperURL() else {
-            throw SupervisorError.missingBundledHelper
-        }
+        let bundledHelper = try checkedBundledHelper()
+        try fm.createDirectory(at: HelperLocations.installDir, withIntermediateDirectories: true)
 
         let target = HelperLocations.installedHelperURL
 
@@ -53,53 +55,65 @@ final class HelperSupervisor {
         let previousNewData = try? Data(contentsOf: HelperLocations.launchAgentPlistURL)
         let changed = try writeLaunchAgentPlist()
         let home = fm.homeDirectoryForCurrentUser
-        let legacyURL = home.appendingPathComponent("Library/LaunchAgents/com.xuanlprk.KeyStatsMac.helper.plist")
-        let legacy = try HelperServiceSwitch.matchingLegacy(at: legacyURL, home: home) { label in
-            self.runLaunchctl(["print", "gui/\(getuid())/\(label)"]).status == 0
-        }
+        let legacy = try installedLegacyAgent(home: home)
         let transaction = HelperServiceSwitch(fileManager: fm, unload: { label in
-            let service = "gui/\(getuid())/\(label)"
-            guard self.runLaunchctl(["print", service]).status == 0 else { return }
-            let result = self.runLaunchctl(["bootout", service])
-            guard result.status == 0 else { throw SupervisorError.launchctlFailed(result.status, result.stderr) }
+            try self.unloadLaunchAgent(label: label)
         }, load: { url in
             let result = self.runLaunchctl(["bootstrap", "gui/\(getuid())", url.path])
             guard result.status == 0 else { throw SupervisorError.launchctlFailed(result.status, result.stderr) }
         })
-        try transaction.perform(legacy: legacy, newURL: HelperLocations.launchAgentPlistURL, previousNewData: previousNewData) {
+        try transaction.perform(legacy: legacy, newURL: HelperLocations.launchAgentPlistURL,
+                                newLabel: HelperLocations.launchAgentLabel, previousNewData: previousNewData) {
             if shouldCopy || changed || !self.isLaunchAgentLoaded() {
                 try self.bootstrapLaunchAgent(restartExisting: shouldCopy || changed)
             }
         }
     }
 
+    /// Restore a missing registration using the files prepared by normal startup.
+    func restoreRegistrationIfMissing() throws {
+        registrationLock.lock()
+        defer { registrationLock.unlock() }
+        guard !isLaunchAgentLoaded() else { return }
+        let url = HelperLocations.launchAgentPlistURL
+        guard let data = try? Data(contentsOf: url),
+              matchesLaunchAgentConfiguration(data),
+              let bundledHelper = try? checkedBundledHelper(),
+              let bundledHash = try? readCDHash(at: bundledHelper),
+              (try? readCDHash(at: HelperLocations.installedHelperURL)) == bundledHash,
+              try installedLegacyAgent(home: FileManager.default.homeDirectoryForCurrentUser)?.wasLoaded != true
+        else { return }
+        try bootstrapLaunchAgent(restartExisting: false)
+    }
+
     // MARK: - LaunchAgent
 
-    @discardableResult
-    private func writeLaunchAgentPlist() throws -> Bool {
-        let binary = HelperLocations.installedHelperBinaryURL.path
-        let plist: [String: Any] = [
+    private var launchAgentConfiguration: [String: Any] {
+        [
             "Label": HelperLocations.launchAgentLabel,
-            "ProgramArguments": [binary],
+            "ProgramArguments": [HelperLocations.installedHelperBinaryURL.path],
             "MachServices": [HelperLocations.machServiceName: true],
             "KeepAlive": ["PathState": [HelperLocations.inputBackgroundMarker.path: true]],
             "LimitLoadToSessionType": ["Aqua"],
             "ProcessType": "Interactive"
         ]
+    }
+
+    private func matchesLaunchAgentConfiguration(_ data: Data) -> Bool {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? NSDictionary else { return false }
+        return plist.isEqual(launchAgentConfiguration as NSDictionary)
+    }
+
+    @discardableResult
+    private func writeLaunchAgentPlist() throws -> Bool {
         do {
-            let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
             let url = HelperLocations.launchAgentPlistURL
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if let existingData = try? Data(contentsOf: url),
-               let existingPlist = try? PropertyListSerialization.propertyList(
-                   from: existingData,
-                   options: [],
-                   format: nil
-               ) as? NSDictionary,
-               existingPlist.isEqual(plist as NSDictionary) {
+            if let existingData = try? Data(contentsOf: url), matchesLaunchAgentConfiguration(existingData) {
                 return false
             }
+            let data = try PropertyListSerialization.data(fromPropertyList: launchAgentConfiguration, format: .xml, options: 0)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
             return true
         } catch {
@@ -109,7 +123,7 @@ final class HelperSupervisor {
 
     private func bootstrapLaunchAgent(restartExisting: Bool) throws {
         if restartExisting {
-            _ = runLaunchctl(["bootout", "gui/\(getuid())/\(HelperLocations.launchAgentLabel)"])
+            try unloadLaunchAgent(label: HelperLocations.launchAgentLabel)
         }
         let res = runLaunchctl(["bootstrap", "gui/\(getuid())", HelperLocations.launchAgentPlistURL.path])
         if res.status != 0 {
@@ -120,12 +134,37 @@ final class HelperSupervisor {
         }
     }
 
-    private func isLaunchAgentLoaded() -> Bool {
-        let res = runLaunchctl(["print", "gui/\(getuid())/\(HelperLocations.launchAgentLabel)"])
-        return res.status == 0
+    private func isLaunchAgentLoaded(label: String = HelperLocations.launchAgentLabel) -> Bool {
+        runLaunchctl(["print", "gui/\(getuid())/\(label)"]).status == 0
+    }
+
+    private func unloadLaunchAgent(label: String) throws {
+        try HelperServiceSwitch.stopIfLoaded(
+            isLoaded: { self.isLaunchAgentLoaded(label: label) },
+            stop: {
+                let result = self.runLaunchctl(["bootout", "gui/\(getuid())/\(label)"])
+                guard result.status == 0 else { throw SupervisorError.launchctlFailed(result.status, result.stderr) }
+            },
+            pause: { Thread.sleep(forTimeInterval: 0.1) }
+        )
+    }
+
+    private func installedLegacyAgent(home: URL) throws -> HelperServiceSwitch.Legacy? {
+        guard !HelperLocations.isDevelopment else { return nil }
+        let url = home.appendingPathComponent("Library/LaunchAgents/com.xuanlprk.KeyStatsMac.helper.plist")
+        return try HelperServiceSwitch.matchingLegacy(at: url, home: home) { self.isLaunchAgentLoaded(label: $0) }
     }
 
     // MARK: - Helpers
+
+    private func checkedBundledHelper() throws -> URL {
+        guard let url = bundledHelperURL() else { throw SupervisorError.missingBundledHelper }
+        guard Bundle.main.bundleIdentifier == HelperLocations.mainBundleId,
+              Bundle(url: url)?.bundleIdentifier == HelperLocations.helperBundleId else {
+            throw SupervisorError.unexpectedBundleIdentity
+        }
+        return url
+    }
 
     private func bundledHelperURL() -> URL? {
         let fm = FileManager.default
@@ -177,7 +216,7 @@ final class HelperSupervisor {
         p.arguments = args
         let err = Pipe()
         p.standardError = err
-        p.standardOutput = Pipe()
+        p.standardOutput = FileHandle.nullDevice
         do { try p.run() } catch {
             return (-1, "\(error)")
         }

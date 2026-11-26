@@ -419,12 +419,23 @@ final class HelperContractTests: XCTestCase {
         XCTAssertNil(PayloadBuilder.build(from: event, type: .leftMouseUp))
     }
 
-    func testPackageKeepsTheExistingServiceIdentityAndXPCInterfaces() {
+    func testPackageUsesTheConfiguredServiceIdentityAndExistingXPCInterfaces() {
         XCTAssertEqual(HelperLocations.interfaceVersion, 4)
+        #if DEBUG
+        XCTAssertEqual(HelperLocations.mainBundleId, "com.xuanlprk.KeyTide.debug")
+        XCTAssertEqual(HelperLocations.helperBundleId, "com.xuanlprk.KeyTide.debug.helper")
+        let supportFolder = "Keytide Debug"
+        #else
         XCTAssertEqual(HelperLocations.mainBundleId, "com.xuanlprk.KeyTide")
         XCTAssertEqual(HelperLocations.helperBundleId, "com.xuanlprk.KeyTide.helper")
+        let supportFolder = "Keytide"
+        #endif
         XCTAssertEqual(HelperLocations.machServiceName, HelperLocations.helperBundleId)
         XCTAssertEqual(HelperLocations.launchAgentLabel, HelperLocations.helperBundleId)
+        XCTAssertEqual(HelperLocations.applicationSupportDirectory.lastPathComponent, supportFolder)
+        XCTAssertEqual(HelperLocations.launchAgentPlistURL.lastPathComponent, HelperLocations.helperBundleId + ".plist")
+        XCTAssertEqual(KeyReplayVault.directory.deletingLastPathComponent(), HelperLocations.applicationSupportDirectory)
+        XCTAssertEqual(TrackpadReplayLibrary.directory.deletingLastPathComponent(), HelperLocations.applicationSupportDirectory)
         XCTAssertNotNil(NSXPCInterface(with: KeytideHelperProtocol.self))
         XCTAssertNotNil(NSXPCInterface(with: KeytideEventSinkProtocol.self))
     }
