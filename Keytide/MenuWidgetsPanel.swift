@@ -325,10 +325,14 @@ final class MenuWidgetsPanel: NSPanel {
 
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        scrollView.horizontalScrollElasticity = .none
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.contentView.postsBoundsChangedNotifications = true
-        let document = FlippedView(frame: NSRect(x: 0, y: 0, width: card.bounds.width, height: max(122, modulesHeight + 16)))
+        // Size the viewport first so the document does not grow again as the clip view resizes from zero.
+        surface.layoutSubtreeIfNeeded()
+        let document = FlippedView(frame: NSRect(x: 0, y: 0, width: scrollView.contentSize.width,
+                                                 height: max(122, modulesHeight + 16)))
         document.autoresizingMask = [.width]
         scrollView.documentView = document
 
@@ -361,7 +365,6 @@ final class MenuWidgetsPanel: NSPanel {
             }
             y += height + 10
         }
-        surface.layoutSubtreeIfNeeded()
     }
 
     private func iconButton(_ symbol: String, key: String, action: Selector) -> NSButton {
