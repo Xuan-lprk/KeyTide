@@ -20,6 +20,7 @@ final class KeyboardHeatmapView: NSView, NSViewToolTipOwner {
     private static let layoutContentInset: CGFloat = 8
     private static let maximumKeyboardScale: CGFloat = 58
     private static let compactSymbols = ["shift": "⇧", "globe": "fn", "control": "⌃", "option": "⌥", "command": "⌘"]
+    private static let tabIcon = NSImage(systemSymbolName: "arrow.right.to.line", accessibilityDescription: nil)
 
     private static let layout: [KeySpec] = {
         let definition = KeyboardLayout.macStyle
@@ -302,17 +303,18 @@ final class KeyboardHeatmapView: NSView, NSViewToolTipOwner {
         let tint = isDark ? (palette[1].blended(withFraction: 0.36, of: .white) ?? palette[1]) : palette[4]
         let backdrop: NSColor = isDark ? .black : .white
 
-        func point(in cap: CGRect) -> CGPoint {
-            CGPoint(x: cap.minX + min(6.5, cap.width * 0.28), y: cap.minY + min(6.5, cap.height * 0.4))
+        func point(for anchor: KeyboardHeatmapEffects.Constellation.Anchor, in units: CGRect) -> CGPoint {
+            let point = anchor.point(in: units)
+            return CGPoint(x: metrics.origin.x + point.x * metrics.scale, y: metrics.origin.y + point.y * metrics.scale)
         }
 
         let lines = NSBezierPath()
         lines.lineCapStyle = .round
         var drawingTip: CGPoint?
         for link in frame.links {
-            guard let from = Self.positions[link.from], let to = Self.positions[link.to] else { continue }
-            let start = point(in: keyFrame(for: from, metrics: metrics))
-            let end = point(in: keyFrame(for: to, metrics: metrics))
+            guard let from = Self.positions[link.from.key], let to = Self.positions[link.to.key] else { continue }
+            let start = point(for: link.from, in: from)
+            let end = point(for: link.to, in: to)
             lines.move(to: start)
             let tip = CGPoint(x: start.x + (end.x - start.x) * link.progress,
                               y: start.y + (end.y - start.y) * link.progress)
@@ -335,31 +337,41 @@ final class KeyboardHeatmapView: NSView, NSViewToolTipOwner {
             dot.fill()
         }
 
-        for (key, state) in frame.stars {
+        var pulses: [String: CGFloat] = [:]
+        for (anchor, state) in frame.stars where state.arrivalPulse > 0 {
+            pulses[anchor.key] = max(pulses[anchor.key, default: 0], state.arrivalPulse)
+        }
+        for (key, pulse) in pulses {
             guard let units = Self.positions[key] else { continue }
             let cap = keyFrame(for: units, metrics: metrics)
-            let center = point(in: cap)
-            let pulseOpacity = frame.opacity * state.arrivalPulse
-            if pulseOpacity > 0 {
-                let outline = NSBezierPath(roundedRect: cap.insetBy(dx: 1, dy: 1), xRadius: 2, yRadius: 2)
-                backdrop.withAlphaComponent(pulseOpacity * 0.8).setStroke()
-                outline.lineWidth = 2.8
-                outline.stroke()
-                (isDark ? NSColor.white : tint).withAlphaComponent(pulseOpacity).setStroke()
-                outline.lineWidth = 1.45
-                outline.stroke()
-            }
+            let pulseOpacity = frame.opacity * pulse
+            let outline = NSBezierPath(roundedRect: cap.insetBy(dx: 1, dy: 1), xRadius: 2, yRadius: 2)
+            backdrop.withAlphaComponent(pulseOpacity * 0.8).setStroke()
+            outline.lineWidth = 2.8
+            outline.stroke()
+            (isDark ? NSColor.white : tint).withAlphaComponent(pulseOpacity).setStroke()
+            outline.lineWidth = 1.45
+            outline.stroke()
+        }
+
+        for (anchor, state) in frame.stars {
+            guard let units = Self.positions[anchor.key] else { continue }
+            let center = point(for: anchor, in: units)
 
             let opacity = frame.opacity * state.brightness
             let radius = min(4.3, metrics.scale * 0.16) * (0.8 + 0.2 * state.brightness + 0.22 * state.arrivalPulse)
-            let haloRadius = radius + 2
+            let isCentered = anchor.placement == .center
+            let haloRadius = isCentered ? min(8.8, metrics.scale * 0.30) : radius + 2
             let halo = NSBezierPath(ovalIn: NSRect(x: center.x - haloRadius, y: center.y - haloRadius,
                                                   width: haloRadius * 2, height: haloRadius * 2))
-            backdrop.withAlphaComponent(opacity * 0.72).setFill()
+            backdrop.withAlphaComponent(opacity * (isCentered ? 0.28 : 0.72)).setFill()
             halo.fill()
-            tint.withAlphaComponent(opacity * 0.62).setStroke()
-            halo.lineWidth = 0.75
+            tint.withAlphaComponent(opacity * (isCentered ? 0.92 : 0.62)).setStroke()
+            halo.lineWidth = isCentered ? 1.1 : 0.75
             halo.stroke()
+
+            // A ring keeps the key's legend readable when the star sits at its center.
+            if isCentered { continue }
 
             let star = NSBezierPath()
             for index in 0..<8 {
@@ -389,6 +401,7 @@ final class KeyboardHeatmapView: NSView, NSViewToolTipOwner {
             ? min(10, scale * 0.34, textFrame.height * 0.42)
             : min(12, scale * 0.34, textFrame.height * 0.68)
         let font = NSFont.systemFont(ofSize: pointSize, weight: .medium)
+        if drawTabLegend(for: key, in: textFrame, font: font, color: textColor, centered: true) { return }
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
         let sizes = lines.map { $0.size(withAttributes: attributes) }
         let height = sizes.reduce(CGFloat.zero) { $0 + $1.height }
@@ -436,12 +449,34 @@ final class KeyboardHeatmapView: NSView, NSViewToolTipOwner {
 
         let horizontalInset = max(4, scale * 0.16)
         let verticalInset = max(3, scale * 0.14)
+        if drawTabLegend(for: key, in: frame.insetBy(dx: horizontalInset, dy: verticalInset),
+                         font: font, color: textColor, centered: false) { return }
         let point = CGPoint(
             x: frame.maxX - size.width - horizontalInset,
             y: frame.maxY - size.height - verticalInset
         )
 
         key.label.draw(at: point, withAttributes: attributes)
+    }
+
+    private func drawTabLegend(for key: KeySpec, in frame: CGRect, font: NSFont, color: NSColor, centered: Bool) -> Bool {
+        guard key.id == "Tab", let icon = Self.tabIcon?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .medium)
+                .applying(.init(paletteColors: [color]))
+        ) else { return false }
+
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let label = key.label.size(withAttributes: attributes)
+        let gap = max(2, font.pointSize * 0.28)
+        let width = icon.size.width + gap + label.width
+        guard width <= frame.width else { return false }
+        let x = centered ? frame.midX - width / 2 : frame.maxX - width
+        let y = centered ? frame.midY - label.height / 2 : frame.maxY - label.height
+        let iconRect = CGRect(x: x, y: y + (label.height - icon.size.height) / 2,
+                              width: icon.size.width, height: icon.size.height)
+        icon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        key.label.draw(at: CGPoint(x: iconRect.maxX + gap, y: y), withAttributes: attributes)
+        return true
     }
 
     private func drawSymbolLegend(for key: KeySpec, symbolName: String, in frame: CGRect, scale: CGFloat, textColor: NSColor) {

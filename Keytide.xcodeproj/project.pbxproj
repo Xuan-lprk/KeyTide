@@ -70,6 +70,7 @@
 		E10000P4 /* MenuUIStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P4 /* MenuUIStyle.swift */; };
 		E10000P5 /* KeyboardHeatmapWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P5 /* KeyboardHeatmapWidget.swift */; };
 		E10000P7 /* MenuWidgetsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P7 /* MenuWidgetsPanel.swift */; };
+		A10B7C300000000000000001 /* MenuTopKeysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10B7C300000000000000002 /* MenuTopKeysView.swift */; };
 		E10000P6 /* KeyboardHeatmapAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000P6 /* KeyboardHeatmapAppearance.swift */; };
 		E11000F1 /* Design/Keytide-Icon-v1/Keytide.icon in Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
 		E11000F3 /* Design/Keytide-Icon-v1/Keytide.icon in Resources */ = {isa = PBXBuildFile; fileRef = E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */; };
@@ -173,6 +174,7 @@
 		E20000P4 /* MenuUIStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuUIStyle.swift; sourceTree = "<group>"; };
 		E20000P5 /* KeyboardHeatmapWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapWidget.swift; sourceTree = "<group>"; };
 		E20000P7 /* MenuWidgetsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuWidgetsPanel.swift; sourceTree = "<group>"; };
+		A10B7C300000000000000002 /* MenuTopKeysView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuTopKeysView.swift; sourceTree = "<group>"; };
 		E20000P6 /* KeyboardHeatmapAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHeatmapAppearance.swift; sourceTree = "<group>"; };
 		E21000F1 /* Design/Keytide-Icon-v1/Keytide.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.icon; path = "Design/Keytide-Icon-v1/Keytide.icon"; sourceTree = SOURCE_ROOT; };
 		F21000A1 /* ReleaseReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseReadiness.swift; sourceTree = "<group>"; };
@@ -294,6 +296,7 @@
 				E20000P4 /* MenuUIStyle.swift */,
 				E20000P5 /* KeyboardHeatmapWidget.swift */,
 				E20000P7 /* MenuWidgetsPanel.swift */,
+				A10B7C300000000000000002 /* MenuTopKeysView.swift */,
 				E20000P6 /* KeyboardHeatmapAppearance.swift */,
 				E20000P3 /* GeekTypingPulseView.swift */,
 				E20000P2 /* GeekStatsPopoverViewController.swift */,
@@ -500,6 +503,7 @@
 				E10000P4 /* MenuUIStyle.swift in Sources */,
 				E10000P5 /* KeyboardHeatmapWidget.swift in Sources */,
 				E10000P7 /* MenuWidgetsPanel.swift in Sources */,
+				A10B7C300000000000000001 /* MenuTopKeysView.swift in Sources */,
 				E10000P6 /* KeyboardHeatmapAppearance.swift in Sources */,
 				E10000P3 /* GeekTypingPulseView.swift in Sources */,
 				E10000P2 /* GeekStatsPopoverViewController.swift in Sources */,

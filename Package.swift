@@ -41,6 +41,7 @@ let package = Package(
                 "Keytide/KeyboardHeatmapView.swift",
                 "Keytide/KeyboardHeatmapWidget.swift",
                 "Keytide/MenuWidgetsPanel.swift",
+                "Keytide/MenuTopKeysView.swift",
                 "Keytide/KeyboardHeatmapRepresentable.swift",
                 "Keytide/KeyboardVisualizationViewController.swift",
                 "Keytide/KeyboardStudioTheme.swift",

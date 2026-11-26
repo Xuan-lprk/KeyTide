@@ -24,7 +24,7 @@ final class RemoteEventProcessor: NSObject, KeytideEventSinkProtocol {
 
     func receiveInputSnapshot(_ data: Data) {
         guard let update = try? JSONDecoder().decode(StatsManager.CaptureUpdate.self, from: data) else { return }
-        let historyPayload = update.containsHistory ? data : nil
+        let historyPayload = update.containsHistory ? StatsManager.HistoryPayload(data) : nil
         deliver { StatsManager.shared.receiveCaptureUpdate(update, historyPayload: historyPayload) }
     }
 

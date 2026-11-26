@@ -4,6 +4,7 @@ import QuartzCore
 final class MenuWidgetsPanel: NSPanel {
     typealias ConstellationHistory = [UUID: Set<KeyboardHeatmapWidget.Pattern>]
 
+    private static var pendingMemoryRelief: DispatchWorkItem?
     private let card: NSView
     private let scrollView = NSScrollView()
     private let travel: CGFloat
@@ -16,6 +17,7 @@ final class MenuWidgetsPanel: NSPanel {
     private var scrollObserver: NSObjectProtocol?
     private var historyRefreshTimer: Timer?
     private var isPresentingWidgets = false
+    private var needsMemoryRelief = false
     private(set) var isDismissing = false
     var onRequestClose: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -89,27 +91,36 @@ final class MenuWidgetsPanel: NSPanel {
     }
 
     func present() {
+        if let pending = Self.pendingMemoryRelief {
+            pending.cancel()
+            Self.pendingMemoryRelief = nil
+            needsMemoryRelief = true
+        }
         let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         revealHeatmapForGeminiPreview()
         if animate { card.layer?.transform = CATransform3DMakeTranslation(travel, 0, 0) }
         makeKeyAndOrderFront(nil)
-        isPresentingWidgets = true
         entranceFinished = !animate
-        if !placements.isEmpty {
-            scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView, queue: .main) { [weak self] _ in self?.updateWidgetVisibility() }
-            updateWidgetVisibility()
-        }
-        if animate {
-            slide(from: travel, to: 0, duration: 0.26) { [weak self] in
-                guard let self, self.isPresentingWidgets else { return }
-                self.entranceFinished = true
-                // Claim a requested preview in layout order when two heatmaps are visible.
-                for placement in self.placements {
-                    self.visibleWidgets[placement.configuration.id]?.start(claimGeminiPreview: self.claimGeminiPreview)
-                }
+        guard animate else { beginPresentingWidgets(); return }
+
+        slide(from: travel, to: 0, duration: 0.34) { [weak self] in
+            guard let self, !self.isDismissing else { return }
+            self.entranceFinished = true
+            // Claim a requested preview in layout order when two heatmaps are visible.
+            for placement in self.placements {
+                self.visibleWidgets[placement.configuration.id]?.start(claimGeminiPreview: self.claimGeminiPreview)
             }
         }
+        // Give the shell a head start before the first visible charts read history.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.045) { [weak self] in self?.beginPresentingWidgets() }
+    }
+
+    private func beginPresentingWidgets() {
+        guard !isDismissing, !isPresentingWidgets, !placements.isEmpty else { return }
+        isPresentingWidgets = true
+        scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView, queue: .main) { [weak self] _ in self?.updateWidgetVisibility() }
+        updateWidgetVisibility()
     }
 
     private func revealHeatmapForGeminiPreview() {
@@ -145,6 +156,18 @@ final class MenuWidgetsPanel: NSPanel {
         orderOut(nil)
         card.layer?.removeAllAnimations()
         for id in visibleWidgets.keys { releaseWidget(id) }
+        if needsMemoryRelief {
+            needsMemoryRelief = false
+            // Let AppKit finish teardown and coalesce rapid close/reopen cycles.
+            let relief = DispatchWorkItem {
+                Self.pendingMemoryRelief = nil
+                DispatchQueue.global(qos: .utility).async {
+                    _ = malloc_zone_pressure_relief(nil, 8 * 1024 * 1024)
+                }
+            }
+            Self.pendingMemoryRelief = relief
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: relief)
+        }
         completion?()
     }
 
@@ -158,7 +181,9 @@ final class MenuWidgetsPanel: NSPanel {
         animation.fromValue = start
         animation.toValue = end
         animation.duration = duration
-        animation.timingFunction = CAMediaTimingFunction(name: end == 0 ? .easeOut : .easeIn)
+        animation.timingFunction = end == 0
+            ? CAMediaTimingFunction(controlPoints: 0.2, 0.78, 0.24, 1)
+            : CAMediaTimingFunction(name: .easeIn)
         layer.add(animation, forKey: "slide")
         CATransaction.commit()
     }
@@ -188,11 +213,14 @@ final class MenuWidgetsPanel: NSPanel {
         guard ids != Set(visibleWidgets.keys) else { return }
 
         let wasShowingHistory = visibleWidgets.values.contains(where: \.readsHistory)
+        let isFirstScreen = visibleWidgets.isEmpty && !entranceFinished
         for id in visibleWidgets.keys where !ids.contains(id) { releaseWidget(id) }
         if !visible.isEmpty {
+            needsMemoryRelief = true
             let stats = StatsManager.shared.displayCurrentStats()
             let history = MenuWidgetHistoryData()
-            for (configuration, frame) in visible where visibleWidgets[configuration.id] == nil {
+            let entering = visible.filter { visibleWidgets[$0.configuration.id] == nil }
+            for (configuration, frame) in entering {
                 let id = configuration.id
                 let widget = MenuWidgetContent(configuration: configuration, previousPatterns: constellationHistory[id] ?? [],
                                                selectedDay: selectedDays[id]) { [weak self] date in
@@ -205,6 +233,15 @@ final class MenuWidgetsPanel: NSPanel {
                 widget.refresh(stats)
                 widget.refreshHistory(history)
                 if entranceFinished { widget.start(claimGeminiPreview: claimGeminiPreview) }
+            }
+            if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                var row = 0
+                var lastY = entering.first?.frame.minY
+                for (configuration, frame) in entering {
+                    if lastY != frame.minY { row += 1 }
+                    lastY = frame.minY
+                    visibleWidgets[configuration.id]?.view.reveal(openingRow: isFirstScreen ? row : nil)
+                }
             }
             if statsToken == nil {
                 statsToken = StatsManager.shared.addStatsUpdateHandler { [weak self] in self?.refreshVisibleWidgets() }
@@ -227,6 +264,7 @@ final class MenuWidgetsPanel: NSPanel {
         constellationHistory[id] = widget.lastConstellationPatterns
         selectedDays[id] = widget.selectedDay
         if isPresentingWidgets { widget.stop() }
+        widget.view.layer?.removeAnimation(forKey: "widgetReveal")
         widget.view.removeFromSuperview()
     }
 
@@ -347,7 +385,7 @@ final class MenuWidgetsPanel: NSPanel {
         switch widget.kind {
         case .pulse: return 148
         case .today: return 107
-        case .keys: return 151
+        case .keys: return MenuTopKeysView.cardHeight
         case .history: return 174
         case .mouse: return 111
         case .heatmap: return KeyboardHeatmapWidget.contentHeight + 16
@@ -391,6 +429,40 @@ private final class MenuWidgetSurface: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func reveal(openingRow: Int?) {
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak layer] in layer?.removeAnimation(forKey: "widgetReveal") }
+        defer { CATransaction.commit() }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = openingRow == nil ? 0.12 : 0.17
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        guard let openingRow else {
+            layer.add(fade, forKey: "widgetReveal")
+            return
+        }
+
+        let settle = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        settle.values = [16, -2, 0]
+        settle.keyTimes = [0, 0.70, 1]
+        settle.duration = 0.26
+        settle.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeInEaseOut)]
+
+        // Relative to the first committed frame, including on a cold layout.
+        let delay = Double(min(openingRow, 4)) * 0.028
+        for animation in [fade as CAAnimation, settle] {
+            animation.beginTime = delay
+            animation.fillMode = .backwards
+        }
+        let reveal = CAAnimationGroup()
+        reveal.animations = [fade, settle]
+        reveal.duration = delay + settle.duration
+        layer.add(reveal, forKey: "widgetReveal")
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateColor()
@@ -445,7 +517,9 @@ private final class MenuWidgetContent {
         case .today:
             body = today(geek: geek)
         case .keys:
-            body = topKeys(geek: geek)
+            let keys = MenuTopKeysView(style: configuration.style)
+            refreshStats = { [weak keys] stats in keys?.update(counts: stats.keyPressCounts) }
+            body = keys
         case .history:
             body = history(configuration: configuration, geek: geek, openDay: openDay)
         case .mouse:
@@ -528,49 +602,6 @@ private final class MenuWidgetContent {
             clicks.update(stats.totalClicks.formatted())
         }
         return Self.stack([keys.view, clicks.view], orientation: .horizontal, spacing: 14, equal: true)
-    }
-
-    private func topKeys(geek: Bool) -> NSView {
-        let cells: [(view: NSView, update: (String, String) -> Void)] = (0..<15).map { _ in
-            if geek {
-                let cell = GeekKeyCountRowView(key: "", count: "", vertical: true)
-                return (cell, { cell.update(key: $0, count: $1) })
-            }
-            let cell = KeyCountRowView(key: "", count: "", vertical: true)
-            return (cell, { cell.update(key: $0, count: $1) })
-        }
-        let rows = (0..<3).map { row in
-            Self.stack(cells[(row * 5)..<((row + 1) * 5)].map(\.view), orientation: .horizontal, spacing: 7, equal: true)
-        }
-        let grid = Self.stack(rows, orientation: .vertical, spacing: 5, equal: true)
-        grid.alignment = .leading
-        for row in rows { row.widthAnchor.constraint(equalTo: grid.widthAnchor).isActive = true }
-        let empty = NSTextField(labelWithString: NSLocalizedString("keyboardHeatmap.noData", comment: ""))
-        empty.textColor = .secondaryLabelColor
-        let area = NSView()
-        for child in [grid, empty] {
-            child.translatesAutoresizingMaskIntoConstraints = false
-            area.addSubview(child)
-        }
-        NSLayoutConstraint.activate([
-            grid.topAnchor.constraint(equalTo: area.topAnchor),
-            grid.leadingAnchor.constraint(equalTo: area.leadingAnchor),
-            grid.trailingAnchor.constraint(equalTo: area.trailingAnchor),
-            grid.bottomAnchor.constraint(equalTo: area.bottomAnchor),
-            empty.centerXAnchor.constraint(equalTo: area.centerXAnchor),
-            empty.centerYAnchor.constraint(equalTo: area.centerYAnchor)
-        ])
-        refreshStats = { stats in
-            let keys = keyBreakdownDisplayCounts(from: stats.keyPressCounts).sorted {
-                $0.value == $1.value ? $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending : $0.value > $1.value
-            }
-            empty.isHidden = !keys.isEmpty
-            for (index, cell) in cells.enumerated() {
-                cell.view.alphaValue = keys.indices.contains(index) ? 1 : 0
-                if keys.indices.contains(index) { cell.update(keys[index].key, keys[index].value.formatted()) }
-            }
-        }
-        return area
     }
 
     private func history(configuration: MenuWidget, geek: Bool, openDay: @escaping (Date) -> Void) -> NSView {

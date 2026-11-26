@@ -527,6 +527,14 @@
 "menuHeatmap.constellation.name.zigzag" = "The Queen";
 "menuHeatmap.constellation.name.cross" = "The Cross";
 "menuHeatmap.constellation.name.gemini" = "The Twins";
+"menuHeatmap.constellation.name.orion" = "The Hunter";
+"menuHeatmap.constellation.name.delphinus" = "The Dolphin";
+"menuHeatmap.constellation.name.cepheus" = "The King";
+"menuHeatmap.constellation.name.lyra" = "The Lyre";
+"menuHeatmap.constellation.name.pegasus" = "The Winged Horse";
+"menuHeatmap.constellation.name.aquila" = "The Eagle";
+"menuHeatmap.constellation.name.scorpius" = "The Scorpion";
+"menuHeatmap.constellation.name.leo" = "The Lion";
 "menuHeatmap.constellation.name.withKey" = "%1$@ (%2$@)";
 "menuHeatmap.effect.ripple" = "Heat Ripple";
 "menuHeatmap.effect.help" = "The effect plays when the heatmap opens. Click any key to start it there.";

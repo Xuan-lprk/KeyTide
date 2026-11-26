@@ -356,12 +356,12 @@ final class AllTimeStatsViewController: NSViewController {
 
     func refreshData() {
         let manager = StatsManager.shared
-        let stats = manager.getAllTimeStats()
+        let (stats, days) = manager.allTimeActivity()
         let keys = manager.historySeries(range: range.historyRange, metric: .keyPresses)
         let calendar = Calendar.current
-        loadedDays = Dictionary(uniqueKeysWithValues: manager.localHistorySnapshot().values.map { daily in
+        loadedDays = Dictionary(uniqueKeysWithValues: days.map { daily in
             let date = calendar.startOfDay(for: daily.date)
-            return (date, ActivityHeatmapView.DayActivity(date: date, keyPresses: max(0, daily.keyPresses), clicks: max(0, daily.totalClicks)))
+            return (date, ActivityHeatmapView.DayActivity(date: date, keyPresses: daily.keyPresses, clicks: daily.clicks))
         })
         visibleDays = keys.map { point in
             let day = calendar.startOfDay(for: calendar.date(byAdding: .day, value: -periodOffset * range.dayCount, to: point.date) ?? point.date)

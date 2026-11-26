@@ -46,21 +46,22 @@ private final class TrackpadInkView: NSView {
         let now = ProcessInfo.processInfo.systemUptime
         if let lastSourceTime, frame.sourceTime < lastSourceTime || frame.sourceTime - lastSourceTime > 0.25 { trails.removeAll(); touching.removeAll() }
         lastSourceTime = frame.sourceTime
+        var active = Set<Int32>()
         for contact in frame.contacts {
-            if contact.state == 3 || !touching.contains(contact.identity) { trails[contact.identity] = [] }
             guard contact.state == 3 || contact.state == 4 else { continue }
-            var points = trails[contact.identity, default: []]
+            active.insert(contact.identity)
+            if contact.state == 3 { trails[contact.identity] = nil }
             let raw = max(0, Double(contact.rawPressure ?? 0))
             // Bounded relative response; not calibrated force or a click detector.
             let pressure = CGFloat(raw / (raw + 60))
-            points.append(Point(position: contact.position, time: now, pressure: pressure))
-            if points.count > 4096 {
-                points = points.enumerated().filter { $0.offset % 2 == 0 || $0.offset == points.count - 1 }.map(\.element)
+            trails[contact.identity, default: []].append(Point(position: contact.position, time: now, pressure: pressure))
+            if let points = trails[contact.identity], points.count > 4096 {
+                // The 4,097th point triggers compaction. Both endpoints have even indices.
+                trails[contact.identity] = stride(from: 0, to: points.count, by: 2).map { points[$0] }
             }
-            trails[contact.identity] = points
         }
-        touching = Set(frame.contacts.filter { $0.state == 3 || $0.state == 4 }.map(\.identity))
-        trails = trails.filter { touching.contains($0.key) }
+        for id in touching where !active.contains(id) { trails[id] = nil }
+        touching = active
         needsDisplay = true
     }
     override func draw(_ dirtyRect: NSRect) {
@@ -105,6 +106,14 @@ private final class TrackpadInkView: NSView {
 }
 
 final class TrackpadStudioView: NSView {
+    struct Choices {
+        let stardust: Bool
+        let haptics: NSControl.StateValue
+        let replayDate: Date
+    }
+
+    var choices: Choices { Choices(stardust: ink.stardust, haptics: haptics.state, replayDate: day.dateValue) }
+
     private let service = TrackpadAppService.shared
     private let ink = TrackpadInkView()
     private let replay = NSButton()
@@ -121,15 +130,20 @@ final class TrackpadStudioView: NSView {
     private var lastHaptic = -Double.infinity
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private func text(_ key: String) -> String { NSLocalizedString(key, comment: "Trackpad preview") }
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(restoring choices: Choices?) {
+        super.init(frame: .zero)
         let brush = NSSegmentedControl(labels: [text("trackpad.ink"), text("trackpad.stardust")], trackingMode: .selectOne, target: self, action: #selector(changeBrush(_:)))
-        brush.selectedSegment = 0; brush.setAccessibilityLabel(text("trackpad.brush"))
+        ink.stardust = choices?.stardust ?? false
+        haptics.state = choices?.haptics ?? .off
+        brush.selectedSegment = ink.stardust ? 1 : 0
+        brush.setAccessibilityLabel(text("trackpad.brush"))
         let clear = NSButton(title: text("trackpad.clear"), target: self, action: #selector(clearInk)); clear.bezelStyle = .rounded
         replay.title = text("trackpad.replay"); replay.bezelStyle = .rounded
         replay.target = self; replay.action = #selector(playDay)
         day.datePickerElements = [.yearMonthDay]; day.datePickerStyle = .textFieldAndStepper
-        day.dateValue = Date(); day.maxDate = Date()
+        let now = Date()
+        day.maxDate = now
+        day.dateValue = min(choices?.replayDate ?? now, now)
         let toolbar = NSStackView(views: [brush, clear, haptics, day, replay]); toolbar.spacing = 8
         help.stringValue = text("trackpad.preview.help"); help.font = .systemFont(ofSize: 12)
         status.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)

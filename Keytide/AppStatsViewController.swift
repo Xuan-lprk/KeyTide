@@ -28,7 +28,11 @@ final class AppStatsViewController: NSViewController, NSTableViewDataSource, NST
     private var sortAscending = false
     private var rangeItems: [AppStats] = []
     private var visibleItems: [AppStats] = []
-    private var appIconCache: [String: NSImage] = [:]
+    private let appIconCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 48
+        return cache
+    }()
     private var windowFocusObserver: NSObjectProtocol?
 
     private lazy var numberFormatter: NumberFormatter = {
@@ -49,7 +53,6 @@ final class AppStatsViewController: NSViewController, NSTableViewDataSource, NST
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
-        reloadRange(preserveScroll: false)
         updateAppearance()
     }
 
@@ -368,7 +371,8 @@ final class AppStatsViewController: NSViewController, NSTableViewDataSource, NST
     }
 
     private func appIcon(for bundleId: String) -> NSImage {
-        if let cached = appIconCache[bundleId] { return cached }
+        let key = bundleId as NSString
+        if let cached = appIconCache.object(forKey: key) { return cached }
         let icon: NSImage
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
             icon = NSWorkspace.shared.icon(forFile: url.path)
@@ -376,7 +380,7 @@ final class AppStatsViewController: NSViewController, NSTableViewDataSource, NST
             icon = defaultAppIcon
         }
         icon.size = NSSize(width: 28, height: 28)
-        appIconCache[bundleId] = icon
+        appIconCache.setObject(icon, forKey: key)
         return icon
     }
 

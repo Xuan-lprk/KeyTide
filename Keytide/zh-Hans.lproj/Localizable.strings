@@ -527,6 +527,14 @@
 "menuHeatmap.constellation.name.zigzag" = "仙后座";
 "menuHeatmap.constellation.name.cross" = "南十字座";
 "menuHeatmap.constellation.name.gemini" = "双子座";
+"menuHeatmap.constellation.name.orion" = "猎户座";
+"menuHeatmap.constellation.name.delphinus" = "海豚座";
+"menuHeatmap.constellation.name.cepheus" = "仙王座";
+"menuHeatmap.constellation.name.lyra" = "天琴座";
+"menuHeatmap.constellation.name.pegasus" = "飞马座";
+"menuHeatmap.constellation.name.aquila" = "天鹰座";
+"menuHeatmap.constellation.name.scorpius" = "天蝎座";
+"menuHeatmap.constellation.name.leo" = "狮子座";
 "menuHeatmap.constellation.name.withKey" = "%1$@（%2$@）";
 "menuHeatmap.effect.ripple" = "热力波纹";
 "menuHeatmap.effect.help" = "打开热力图时播放一次。点击任意键帽，可从该键开始。";

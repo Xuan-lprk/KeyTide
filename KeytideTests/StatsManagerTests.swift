@@ -76,7 +76,7 @@ final class StatsManagerTests: XCTestCase {
         helper.incrementKeyPresses(keyName: "S")
         let payload = try JSONEncoder().encode(helper.captureSnapshot(includingHistory: true))
         let update = try JSONDecoder().decode(StatsManager.CaptureUpdate.self, from: payload)
-        app.receiveCaptureUpdate(update, historyPayload: update.containsHistory ? payload : nil)
+        app.receiveCaptureUpdate(update, historyPayload: update.containsHistory ? .init(payload) : nil)
         XCTAssertEqual(app.displayCurrentStats().keyPresses, 2)
         app.resetStats()
         app.flushPendingSave()
@@ -109,7 +109,7 @@ final class StatsManagerTests: XCTestCase {
                 current: makeStats(on: today, keyPresses: current), history: history,
                 kps: 0, cps: 0, sampledAt: 0, calibrationFactor: 1))
             let update = try JSONDecoder().decode(StatsManager.CaptureUpdate.self, from: payload)
-            app.receiveCaptureUpdate(update, historyPayload: update.containsHistory ? payload : nil)
+            app.receiveCaptureUpdate(update, historyPayload: update.containsHistory ? .init(payload) : nil)
         }
         try receive(current: 7, history: [context.dayKey(yesterday): previous])
         let days = app.heatmapActivityData()
@@ -135,6 +135,80 @@ final class StatsManagerTests: XCTestCase {
         app.discardPresentationHistory()
         XCTAssertEqual(app.localHistorySnapshot().keys.sorted(), [context.dayKey(today)])
         XCTAssertTrue(app.appStatsSummary(range: .all).isEmpty)
+    }
+
+    func testLargeHelperArchiveRoundTripsAfterClearingPresentationCaches() throws {
+        let context = try makeContext()
+        defer { context.cleanUp() }
+        let today = context.day(offset: 0), older = context.day(offset: -10)
+        var stats = makeStats(on: older, keyPresses: 999)
+        var app = AppStats(bundleId: "sample", displayName: String(repeating: "Fixture", count: 48_000))
+        app.keyPressCounts = ["X": 999]
+        app.keyPresses = 999
+        stats.appStats = ["sample": app]
+        let payload = try JSONEncoder().encode(StatsManager.CaptureSnapshot(
+            current: makeStats(on: today), history: [context.dayKey(older): stats],
+            kps: 0, cps: 0, sampledAt: 0, calibrationFactor: 1))
+        let archive = StatsManager.HistoryPayload(payload)
+        guard case .lz4 = archive else { return XCTFail("Expected a compressed archive") }
+        XCTAssertEqual(archive.data, payload)
+        let manager = context.makeManager(ownsCaptureStore: false)
+        manager.receiveCaptureUpdate(try JSONDecoder().decode(StatsManager.CaptureUpdate.self, from: payload), historyPayload: archive)
+        XCTAssertEqual(manager.getAllTimeStats().totalKeyPresses, 999)
+        manager.discardPresentationHistory()
+        XCTAssertEqual(manager.appStatsSummary(range: .month).first?.keyPressCounts, ["X": 999])
+        manager.discardPresentationHistory()
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let export = try decoder.decode(StatsImportPayload.self, from: manager.exportStatsData())
+        XCTAssertEqual(export.history[context.dayKey(older)]?.appStats["sample"]?.displayName, app.displayName)
+    }
+
+    func testGlobalAndRangeProjectionsPreserveLegacyDaysAndCompleteExports() throws {
+        let context = try makeContext()
+        defer { context.cleanUp() }
+        let today = context.day(offset: 0)
+        let recent = context.day(offset: -2)
+        let older = context.day(offset: -20)
+        let remote = context.day(offset: -80)
+        func day(_ date: Date, count: Int, appOnly: Bool = false) -> DailyStats {
+            var stats = makeStats(on: date, keyPresses: appOnly ? 0 : count)
+            stats.keyPressCounts = appOnly ? [:] : ["Function+A": count]
+            var app = AppStats(bundleId: "sample", displayName: "Sample")
+            app.keyPressCounts = ["X": count]
+            app.keyPresses = count
+            stats.appStats = ["sample": app]
+            return stats
+        }
+        let history = [context.dayKey(recent): day(older, count: 2),
+                       "invalid-a": day(older, count: 7, appOnly: true),
+                       "invalid-b": day(older, count: 99),
+                       context.dayKey(remote): day(remote, count: 20)]
+        try seed(defaults: context.defaults, current: day(today, count: 1), history: history)
+        let manager = context.makeManager(ownsCaptureStore: false)
+        let activity = manager.allTimeActivity()
+        XCTAssertEqual(activity.stats.activeDays, 4)
+        XCTAssertEqual(activity.stats.keyPressCounts, ["Fn+A": 23])
+        XCTAssertEqual(activity.days.first { $0.date == recent }?.keyPresses, 2)
+        XCTAssertEqual(manager.appStatsSummary(range: .week).first?.keyPresses, 3)
+        XCTAssertEqual(manager.appStatsSummary(range: .month).first?.keyPressCounts, ["X": 10])
+        XCTAssertEqual(manager.appStatsSummary(range: .week).first?.keyPresses, 3)
+        XCTAssertEqual(manager.cumulativeKeyboardSnapshot(asOf: today)?.keyPressCounts, ["Fn+A": 23])
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let export = try decoder.decode(StatsImportPayload.self, from: manager.exportStatsData())
+        XCTAssertEqual(export.history[context.dayKey(remote)]?.appStats["sample"]?.keyPressCounts, ["X": 20])
+
+        for includeHistory in [true, false] {
+            let payload = try JSONEncoder().encode(StatsManager.CaptureSnapshot(
+                current: day(today, count: includeHistory ? 3 : 4), history: includeHistory ? [:] : nil,
+                kps: 0, cps: 0, sampledAt: 0, calibrationFactor: 1))
+            let update = try JSONDecoder().decode(StatsManager.CaptureUpdate.self, from: payload)
+            manager.receiveCaptureUpdate(update, historyPayload: includeHistory ? .init(payload) : nil)
+            XCTAssertEqual(manager.getAllTimeStats().activeDays, 1)
+            XCTAssertEqual(manager.appStatsSummary(range: .month).first?.keyPresses, includeHistory ? 3 : 4)
+            manager.discardPresentationHistory()
+        }
     }
 
     func testMenuStartupReadsTodaysCompleteRecordUsingHistoricalDayIdentity() throws {

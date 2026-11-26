@@ -7,7 +7,8 @@ final class KeyboardVisualizationViewController: NSViewController {
         loadReplay: { day, completion in KeyReplayRecording.shared.load(day: day, completion: completion) })
     private let models = NSSegmentedControl()
     private let devices = NSSegmentedControl()
-    private let trackpad = TrackpadStudioView()
+    private var trackpad: TrackpadStudioView?
+    private var trackpadChoices: TrackpadStudioView.Choices?
     private var studioTitle: NSTextField?
     private var showsTrackpad: Bool { devices.selectedSegment == 1 }
     private let interaction = NSSegmentedControl()
@@ -133,15 +134,6 @@ final class KeyboardVisualizationViewController: NSViewController {
             replayToggle.heightAnchor.constraint(equalToConstant: 28)
         ])
 
-        trackpad.translatesAutoresizingMaskIntoConstraints = false
-        stage.addSubview(trackpad)
-        NSLayoutConstraint.activate([
-            trackpad.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            trackpad.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            trackpad.topAnchor.constraint(equalTo: content.topAnchor),
-            trackpad.bottomAnchor.constraint(equalTo: stage.bottomAnchor, constant: -18)
-        ])
-        trackpad.isHidden = true
         addChild(growth)
         content.canvas.addSubview(growth.view)
         growth.view.frame = content.bounds
@@ -406,9 +398,33 @@ final class KeyboardVisualizationViewController: NSViewController {
         positionInsight()
     }
 
+    private func presentTrackpad() {
+        if let trackpad { trackpad.setPresented(true); return }
+        let trackpad = TrackpadStudioView(restoring: trackpadChoices)
+        self.trackpad = trackpad
+        trackpad.translatesAutoresizingMaskIntoConstraints = false
+        stage.addSubview(trackpad)
+        NSLayoutConstraint.activate([
+            trackpad.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            trackpad.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            trackpad.topAnchor.constraint(equalTo: content.topAnchor),
+            trackpad.bottomAnchor.constraint(equalTo: stage.bottomAnchor, constant: -18)
+        ])
+        tintLabels(in: trackpad, palette: palette)
+        trackpad.setPresented(true)
+    }
+
+    private func releaseTrackpad() {
+        guard let trackpad else { return }
+        trackpadChoices = trackpad.choices
+        trackpad.setPresented(false)
+        trackpad.removeFromSuperview()
+        self.trackpad = nil
+    }
+
     @objc private func changeDevice() {
         let showing = showsTrackpad
-        trackpad.isHidden = !showing; trackpad.setPresented(showing)
+        if showing { presentTrackpad() } else { releaseTrackpad() }
         content.isHidden = showing
         for control in [models, interaction, fitButton, exportButton] { control.isHidden = showing }
         total.isHidden = showing; totalCaption.isHidden = showing; date.isHidden = showing
@@ -495,22 +511,21 @@ final class KeyboardVisualizationViewController: NSViewController {
                          NSWindow.didChangeOcclusionStateNotification, NSWindow.willCloseNotification] {
                 viewportObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     if name == NSWindow.didResignKeyNotification || name == NSWindow.didMiniaturizeNotification || name == NSWindow.willCloseNotification { self?.content.cancelGestures() }
-                    if name == NSWindow.willCloseNotification { self?.trackpad.setPresented(false) }
-                    else { self?.trackpad.refreshActivity() }
                     if name == NSWindow.willCloseNotification { self?.releaseResourcesForClosedWindow() }
+                    else { self?.trackpad?.refreshActivity() }
                 })
             }
         }
         viewportObservers.append(NotificationCenter.default.addObserver(forName: NSApplication.didHideNotification, object: nil, queue: .main) { [weak self] _ in
             self?.content.cancelGestures()
-            self?.trackpad.refreshActivity()
+            self?.trackpad?.refreshActivity()
         })
-        trackpad.setPresented(showsTrackpad)
+        if showsTrackpad { presentTrackpad() }
     }
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
-        trackpad.suspendRendering()
+        trackpad?.suspendRendering()
     }
 
     private func releaseResourcesForClosedWindow() {
@@ -518,7 +533,7 @@ final class KeyboardVisualizationViewController: NSViewController {
         resourcesReleased = true
         content.cancelGestures()
         content.reset()
-        trackpad.setPresented(false)
+        releaseTrackpad()
         growth.releaseResourcesForClosedWindow()
         typingSelectionObservers.values.forEach(NotificationCenter.default.removeObserver)
         typingSelectionObservers.removeAll()
@@ -550,7 +565,7 @@ final class KeyboardVisualizationViewController: NSViewController {
             resourcesReleased = false
             if !showsTrackpad { changeModel() }
         }
-        if showsTrackpad { trackpad.setPresented(true) }
+        if showsTrackpad { presentTrackpad() }
         growth.setPresented(!growth.view.isHidden && !showsTrackpad)
         growth.refreshData(resetToToday: resetToToday)
         content.onGestureEnd?()

@@ -90,6 +90,7 @@ struct KeyboardHeatmapEffects {
             enum Pattern: String {
                 case loneStar, scatteredStars, twinLights, longString, silverHook, wings
                 case triangle, crown, zigzag, cross, gemini
+                case orion, delphinus, cepheus, lyra, pegasus, aquila, scorpius, leo
 
                 var title: String {
                     NSLocalizedString("menuHeatmap.constellation.name." + rawValue, comment: "")
@@ -108,6 +109,14 @@ struct KeyboardHeatmapEffects {
                     case .zigzag: return "Cassiopeia"
                     case .cross: return "Crux"
                     case .gemini: return "Gemini"
+                    case .orion: return "Orion"
+                    case .delphinus: return "Delphinus"
+                    case .cepheus: return "Cepheus"
+                    case .lyra: return "Lyra"
+                    case .pegasus: return "Pegasus"
+                    case .aquila: return "Aquila"
+                    case .scorpius: return "Scorpius"
+                    case .leo: return "Leo"
                     }
                 }
             }
@@ -116,18 +125,44 @@ struct KeyboardHeatmapEffects {
             let firstKey: String
         }
 
+        struct Anchor: Hashable {
+            enum Placement: CaseIterable {
+                case topLeft, topRight, bottomLeft, bottomRight, center
+            }
+
+            let key: String
+            let placement: Placement
+
+            init(_ key: String, placement: Placement = .topLeft) {
+                self.key = key
+                self.placement = placement
+            }
+
+            func point(in cap: CGRect) -> CGPoint {
+                let x = min(0.24, cap.width * 0.28)
+                let y = min(0.24, cap.height * 0.4)
+                switch placement {
+                case .topLeft: return CGPoint(x: cap.minX + x, y: cap.minY + y)
+                case .topRight: return CGPoint(x: cap.maxX - x, y: cap.minY + y)
+                case .bottomLeft: return CGPoint(x: cap.minX + x, y: cap.maxY - y)
+                case .bottomRight: return CGPoint(x: cap.maxX - x, y: cap.maxY - y)
+                case .center: return CGPoint(x: cap.midX, y: cap.midY)
+                }
+            }
+        }
+
         struct Star: Equatable {
             let brightness: CGFloat
             let arrivalPulse: CGFloat
         }
 
         struct Link: Equatable {
-            let from: String
-            let to: String
+            let from: Anchor
+            let to: Anchor
             let progress: CGFloat
         }
 
-        let stars: [String: Star]
+        let stars: [Anchor: Star]
         let links: [Link]
         let opacity: CGFloat
         let namedGroups: [NamedGroup]
@@ -138,18 +173,32 @@ struct KeyboardHeatmapEffects {
     let counts: [String: Int]
 
     private typealias Pattern = Constellation.NamedGroup.Pattern
-    private typealias Step = (source: String?, key: String)
+    private typealias Anchor = Constellation.Anchor
+    private typealias KeyStep = (source: String?, key: String)
+    private typealias Step = (source: Anchor?, target: Anchor)
 
     private struct Group {
         let name: Constellation.NamedGroup
-        var closingEdge: (from: String, to: String)? = nil
+        var closingEdge: (from: Anchor, to: Anchor)? = nil
     }
 
     private struct Layout {
-        let origin: String
+        let origin: Anchor
         let order: [Step]
         let groups: [Group]
         var geminiKeys: Set<String> = []
+
+        init(origin: Anchor, order: [Step], groups: [Group]) {
+            self.origin = origin
+            self.order = order
+            self.groups = groups
+        }
+
+        init(origin: String, order: [KeyStep], groups: [Group], geminiKeys: Set<String> = []) {
+            self.init(origin: Anchor(origin), order: order.map { ($0.source.map { Anchor($0) }, Anchor($0.key)) },
+                      groups: groups)
+            self.geminiKeys = geminiKeys
+        }
     }
 
     func frames(for effect: KeyboardHeatmapEffect, from selected: String?,
@@ -196,8 +245,14 @@ struct KeyboardHeatmapEffects {
             if selected == nil, layout.geminiKeys.isEmpty, !previous.contains(.gemini), used.count >= 6,
                Int.random(in: 0..<8, using: &random) == 0,
                let twins = geminiChains(in: Array(used.prefix(18))) ?? geminiChains(in: used) {
-                let destinations = (twins.left + twins.right).filter { $0 != layout.origin }
-                layout = geminiLayout(from: layout.origin, destinations: destinations, chains: twins)
+                let destinations = (twins.left + twins.right).filter { $0 != layout.origin.key }
+                layout = geminiLayout(from: layout.origin.key, destinations: destinations, chains: twins)
+            }
+            if layout.geminiKeys.isEmpty, used.count >= 4,
+               (repeatedPatterns(in: layout, previous: previous) > 0 || Bool.random(using: &random)),
+               let figure = catalogLayout(from: layout.origin.key, used: used, hot: hot, peak: peak,
+                                          avoiding: previous, using: &random) {
+                layout = figure
             }
             return constellationFrames(layout)
         case .ripple:
@@ -260,22 +315,22 @@ struct KeyboardHeatmapEffects {
 
     private func constellationFrames(_ layout: Layout) -> [Frame] {
         let order = layout.order
-        let stars = [layout.origin] + order.map(\.key)
+        let stars = [layout.origin] + order.map(\.target)
         let namedGroups = layout.groups.map(\.name)
         let framesPerLink = 8
         let leadIn = 7
         func arrival(at index: Int) -> Int { index == 0 ? 0 : leadIn + index * framesPerLink }
-        let closures = layout.groups.compactMap(\.closingEdge).compactMap { edge -> (from: String, to: String, start: Int)? in
+        let closures = layout.groups.compactMap(\.closingEdge).compactMap { edge -> (from: Anchor, to: Anchor, start: Int)? in
             guard let last = stars.lastIndex(where: { $0 == edge.from || $0 == edge.to }) else { return nil }
             return (edge.from, edge.to, arrival(at: last))
         }
         let completed = max(arrival(at: order.count), (closures.map(\.start).max() ?? 0) + framesPerLink)
-        let geminiArrival = stars.lastIndex { layout.geminiKeys.contains($0) }.map { arrival(at: $0) }
+        let geminiArrival = stars.lastIndex { layout.geminiKeys.contains($0.key) }.map { arrival(at: $0) }
         let fadeStart = completed + (geminiArrival == nil ? 22 : 40)
         let fadeFrames = 14
 
         return (0...(fadeStart + fadeFrames)).map { step in
-            let visibleStars = stars.enumerated().reduce(into: [String: Constellation.Star]()) { result, entry in
+            let visibleStars = stars.enumerated().reduce(into: [Anchor: Constellation.Star]()) { result, entry in
                 let (index, key) = entry
                 let arrival = arrival(at: index)
                 guard step >= arrival else { return }
@@ -290,7 +345,7 @@ struct KeyboardHeatmapEffects {
                 let elapsed = step - leadIn - index * framesPerLink
                 guard elapsed > 0, let source = entry.source else { return nil }
                 let progress = smoothstep(CGFloat(elapsed) / CGFloat(framesPerLink))
-                return Constellation.Link(from: source, to: entry.key, progress: progress)
+                return Constellation.Link(from: source, to: entry.target, progress: progress)
             }
             for edge in closures where step > edge.start {
                 let progress = smoothstep(CGFloat(step - edge.start) / CGFloat(framesPerLink))
@@ -341,11 +396,10 @@ struct KeyboardHeatmapEffects {
         return nil
     }
 
-    private func geminiOrder(from origin: String, destinations: [String], chains: (left: [String], right: [String]))
-        -> [(source: String?, key: String)] {
+    private func geminiOrder(from origin: String, destinations: [String], chains: (left: [String], right: [String])) -> [KeyStep] {
         let first = chains.right.contains(origin) ? chains.right : chains.left
         let second = first == chains.left ? chains.right : chains.left
-        var order: [(source: String?, key: String)] = []
+        var order: [KeyStep] = []
         if let start = first.firstIndex(of: origin) {
             for index in first.indices.dropFirst(start + 1) {
                 order.append((first[index - 1], first[index]))
@@ -361,7 +415,7 @@ struct KeyboardHeatmapEffects {
         return order
     }
 
-    private func constellationGroups(from origin: String, order: [Step]) -> [Group] {
+    private func constellationGroups(from origin: String, order: [KeyStep]) -> [Group] {
         var groups = [[origin]]
         var groupIndex = [origin: 0]
         var neighbors: [String: [String]] = [:]
@@ -380,7 +434,8 @@ struct KeyboardHeatmapEffects {
         let connected = groups.compactMap { keys -> Group? in
             guard keys.count > 1, let firstKey = keys.first else { return nil }
             func group(_ pattern: Pattern, closingEdge: (String, String)? = nil) -> Group {
-                Group(name: .init(pattern: pattern, firstKey: firstKey), closingEdge: closingEdge)
+                Group(name: .init(pattern: pattern, firstKey: firstKey),
+                      closingEdge: closingEdge.map { (Anchor($0.0), Anchor($0.1)) })
             }
             if keys.count == 2 {
                 return group(.twinLights)
@@ -444,10 +499,10 @@ struct KeyboardHeatmapEffects {
     }
 
     private func constellationOrder(from origin: String, to destinations: [String],
-                                    using random: inout some RandomNumberGenerator) -> [Step] {
+                                    using random: inout some RandomNumberGenerator) -> [KeyStep] {
         var joined = [origin]
         var remaining = destinations
-        var order: [Step] = []
+        var order: [KeyStep] = []
         while !remaining.isEmpty {
             var links: [(from: String, index: Int, distance: CGFloat)] = []
             for source in joined {
@@ -482,5 +537,168 @@ struct KeyboardHeatmapEffects {
             }
             return .ripple(highlights)
         }
+    }
+}
+
+extension KeyboardHeatmapEffects {
+    private struct Figure {
+        let pattern: Constellation.NamedGroup.Pattern
+        let points: [(x: CGFloat, y: CGFloat)]
+        // Each vertex after the first names its parent. A final edge may close a loop.
+        let parents: [Int]
+        var closingEdge: (Int, Int)? = nil
+    }
+
+    // Compact interpretations of the familiar sky outlines, in key pitches.
+    private static let catalog: [Figure] = [
+        .init(pattern: .orion, points: [(0, 1), (1, 1), (2, 1), (-1, 0), (3, 0), (-1, 2), (3, 2)],
+              parents: [0, 1, 0, 2, 0, 2]),
+        .init(pattern: .delphinus, points: [(0, 0), (1, 1), (0, 2), (-1, 1), (-1, 3)],
+              parents: [0, 1, 2, 2], closingEdge: (3, 0)),
+        .init(pattern: .cepheus, points: [(0, 0), (-1, 1), (-1, 2), (1, 2), (1, 1)],
+              parents: [0, 1, 2, 3], closingEdge: (4, 0)),
+        .init(pattern: .lyra, points: [(-1, 0), (0, 1), (2, 1), (3, 2), (1, 2)],
+              parents: [0, 1, 2, 3], closingEdge: (4, 1)),
+        .init(pattern: .pegasus, points: [(0, 0), (2, 0), (2, 2), (0, 2), (-1, 1), (-2, 1)],
+              parents: [0, 1, 2, 0, 4], closingEdge: (3, 0)),
+        .init(pattern: .aquila, points: [(0, 0), (0, 1), (0, 2), (-1, 2), (-3, 1), (1, 2), (3, 1)],
+              parents: [0, 1, 1, 3, 1, 5]),
+        .init(pattern: .scorpius, points: [(0, 0), (2, 1), (3, 2), (5, 2), (6, 1), (5, 0)],
+              parents: [0, 1, 2, 3, 4]),
+        .init(pattern: .leo, points: [(0, 0), (-1, 0), (-2, 1), (-1, 2), (0, 2), (3, 2), (2, 1)],
+              parents: [0, 1, 2, 3, 4, 5], closingEdge: (6, 4))
+    ]
+
+    private struct AnchorCell: Hashable {
+        let x: Int
+        let y: Int
+
+        init(x: CGFloat, y: CGFloat) {
+            self.x = Int(floor(x))
+            self.y = Int(floor(y))
+        }
+
+        init(_ point: CGPoint) { self.init(x: point.x, y: point.y) }
+
+        init(x: Int, y: Int) {
+            self.x = x
+            self.y = y
+        }
+    }
+
+    private struct LocatedAnchor {
+        let anchor: Constellation.Anchor
+        let point: CGPoint
+        let heat: CGFloat
+    }
+
+    private func catalogLayout(from origin: String, used: [String], hot: [String], peak: Double,
+                               avoiding previous: Set<Pattern>, using random: inout some RandomNumberGenerator) -> Layout? {
+        let figures = Self.catalog.filter { !previous.contains($0.pattern) }.shuffled(using: &random)
+        guard !figures.isEmpty else { return nil }
+        let placements = Anchor.Placement.allCases.shuffled(using: &random)
+        let hotKeys = Set(hot)
+        let requireExplorer = used.count > hotKeys.count
+        let requiredHot = min(hotKeys.count, hotKeys.contains(origin) ? 2 : 1)
+
+        func anchors(for key: String) -> [LocatedAnchor] {
+            guard let cap = positions[key] else { return [] }
+            let heat = CGFloat(sqrt(Double(max(0, counts[key, default: 0])) / peak))
+            return placements.map { placement in
+                let anchor = Anchor(key, placement: placement)
+                return LocatedAnchor(anchor: anchor, point: anchor.point(in: cap), heat: heat)
+            }
+        }
+
+        // Searching a small neighborhood per vertex bounds the work even with a full keyboard.
+        let active = [origin] + used.filter { $0 != origin }
+        let grid = Dictionary(grouping: active.flatMap(anchors(for:))) { AnchorCell($0.point) }
+        let startingKeys = [origin] + hot.filter { $0 != origin }.prefix(4)
+        let starts = startingKeys.flatMap(anchors(for:))
+        let directions: [CGFloat] = Bool.random(using: &random) ? [1, -1] : [-1, 1]
+        let pitches: [CGFloat] = [1.15, 0.86, 0.70]
+
+        for figure in figures {
+            let vertices = figure.points.indices.shuffled(using: &random)
+            for start in starts {
+                for vertex in vertices {
+                    for pitch in pitches {
+                        for direction in directions {
+                            guard let fitted = fit(figure, startingAt: vertex, anchor: start, pitch: pitch,
+                                                   direction: direction, grid: grid) else { continue }
+                            let keys = Set(fitted.map(\.key)).union([origin])
+                            guard keys.intersection(hotKeys).count >= requiredHot,
+                                  !requireExplorer || keys.contains(where: { !hotKeys.contains($0) && counts[$0, default: 0] > 0 })
+                            else { continue }
+                            return layout(for: figure, fitted: fitted, origin: origin, start: vertex)
+                        }
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private func fit(_ figure: Figure, startingAt vertex: Int, anchor: LocatedAnchor, pitch: CGFloat, direction: CGFloat,
+                     grid: [AnchorCell: [LocatedAnchor]]) -> [Anchor]? {
+        let reference = figure.points[vertex]
+        let tolerance = min(0.48, pitch * 0.56)
+        var fitted = Array(repeating: anchor, count: figure.points.count)
+        var placed = [anchor]
+        for (index, point) in figure.points.enumerated() where index != vertex {
+            let target = CGPoint(x: anchor.point.x + (point.x - reference.x) * pitch * direction,
+                                 y: anchor.point.y + (point.y - reference.y) * pitch)
+            guard let next = nearestAnchor(to: target, within: tolerance, in: grid, excluding: placed) else { return nil }
+            fitted[index] = next
+            placed.append(next)
+        }
+        let anchors = fitted.map(\.anchor)
+        // Corners on one key can share a figure, but a figure should span at least three keys.
+        return Set(anchors.map(\.key)).count >= 3 ? anchors : nil
+    }
+
+    private func nearestAnchor(to target: CGPoint, within radius: CGFloat, in grid: [AnchorCell: [LocatedAnchor]],
+                               excluding placed: [LocatedAnchor]) -> LocatedAnchor? {
+        let lower = AnchorCell(x: target.x - radius, y: target.y - radius)
+        let upper = AnchorCell(x: target.x + radius, y: target.y + radius)
+        var best: LocatedAnchor?
+        var bestScore = CGFloat.infinity
+        for y in lower.y...upper.y {
+            for x in lower.x...upper.x {
+                for candidate in grid[AnchorCell(x: x, y: y), default: []] {
+                    let dx = candidate.point.x - target.x
+                    let dy = candidate.point.y - target.y
+                    let distance = dx * dx + dy * dy
+                    guard distance <= radius * radius else { continue }
+                    let sameKey = placed.filter { $0.anchor.key == candidate.anchor.key }
+                    guard sameKey.allSatisfy({
+                        abs($0.point.x - candidate.point.x) >= 0.42 || abs($0.point.y - candidate.point.y) >= 0.42
+                    }) else { continue }
+                    let score = distance + (1 - candidate.heat) * 0.08 + CGFloat(sameKey.count) * 0.08
+                    if score < bestScore {
+                        bestScore = score
+                        best = candidate
+                    }
+                }
+            }
+        }
+        return best
+    }
+
+    private func layout(for figure: Figure, fitted: [Anchor], origin: String, start: Int) -> Layout {
+        let originIndex = fitted.firstIndex { $0.key == origin }
+        let root = fitted[originIndex ?? start]
+        var order: [Step] = originIndex == nil ? [(nil, root)] : []
+        var pending = figure.parents.enumerated().map { ($0.element, $0.offset + 1) }
+        var visited = Set([originIndex ?? start])
+        while let index = pending.firstIndex(where: { visited.contains($0.0) || visited.contains($0.1) }) {
+            let (parent, child) = pending.remove(at: index)
+            let (source, target) = visited.contains(parent) ? (parent, child) : (child, parent)
+            order.append((fitted[source], fitted[target]))
+            visited.insert(target)
+        }
+        let group = Group(name: .init(pattern: figure.pattern, firstKey: root.key),
+                          closingEdge: figure.closingEdge.map { (fitted[$0.0], fitted[$0.1]) })
+        return Layout(origin: originIndex == nil ? Anchor(origin) : root, order: order, groups: [group])
     }
 }

@@ -17,9 +17,9 @@ final class KeyboardHeatmapEffectsTests: XCTestCase {
         var hotOrigins: [String: Int] = [:]
         for _ in 0..<120 {
             let animation = constellations(effects.frames(for: .constellation, from: nil, using: &random))
-            let origin = try XCTUnwrap(animation.first?.stars.keys.first)
+            let origin = try XCTUnwrap(animation.first?.stars.keys.first?.key)
             let shown = try XCTUnwrap(animation.last)
-            let stars = Set(shown.stars.keys)
+            let stars = Set(shown.stars.keys.map(\.key))
             XCTAssertNotNil(hot[origin])
             XCTAssertGreaterThanOrEqual(stars.intersection(hot.keys).count, 2)
             XCTAssertFalse(stars.isDisjoint(with: lessUsed))
@@ -43,7 +43,7 @@ final class KeyboardHeatmapEffectsTests: XCTestCase {
             let patterns = Set(try XCTUnwrap(current.last).namedGroups.map(\.pattern))
             let next = constellations(effects.frames(for: .constellation, from: "E", avoiding: patterns, using: &replay))
             if Set(try XCTUnwrap(next.last).namedGroups.map(\.pattern)).isDisjoint(with: patterns) { avoided += 1 }
-            XCTAssertEqual(Set(next.first?.stars.keys.map { $0 } ?? []), ["E"])
+            XCTAssertEqual(Set(next.first?.stars.keys.map(\.key) ?? []), ["E"])
         }
         XCTAssertGreaterThan(avoided, 10)
     }
@@ -88,9 +88,9 @@ final class KeyboardHeatmapEffectsTests: XCTestCase {
             let animation = constellations(effects.frames(for: .constellation, from: nil, using: &random))
             guard let result = animation.last, result.namedGroups.first?.pattern == .gemini else { continue }
             matches += 1
-            let origin = try XCTUnwrap(animation.first?.stars.keys.first)
+            let origin = try XCTUnwrap(animation.first?.stars.keys.first?.key)
             XCTAssertNotNil(hot[origin])
-            XCTAssertEqual(Set(result.stars.keys), Set(twins.keys).union([origin]))
+            XCTAssertEqual(Set(result.stars.keys.map(\.key)), Set(twins.keys).union([origin]))
 
             var replay = SeededRandom(state: UInt64(seed))
             let next = constellations(effects.frames(for: .constellation, from: nil, avoiding: [.gemini], using: &replay))
@@ -105,11 +105,57 @@ final class KeyboardHeatmapEffectsTests: XCTestCase {
         let frames = constellations(effects.geminiPreviewFrames())
         let completed = try XCTUnwrap(frames.first { $0.geminiWash == 1 })
         XCTAssertEqual(completed.namedGroups, [.init(pattern: .gemini, firstKey: "E")])
-        XCTAssertEqual(Set(completed.stars.keys), ["E", "D", "C", "R", "F", "V"])
+        XCTAssertEqual(Set(completed.stars.keys.map(\.key)), ["E", "D", "C", "R", "F", "V"])
         XCTAssertEqual(completed.links.count, 4)
         XCTAssertTrue(completed.links.allSatisfy { $0.progress == 1 })
         XCTAssertEqual(completed.opacity, 1)
         XCTAssertEqual(frames.last?.geminiWash, 0)
+    }
+
+    func testCatalogFindsAllEightFiguresOnAnActiveKeyboard() throws {
+        let catalog: Set<Pattern> = [.orion, .delphinus, .cepheus, .lyra, .pegasus, .aquila, .scorpius, .leo]
+        let hot = ["Space": 2_800, "E": 1_350, "A": 998, "D": 842, "LeftCmd": 780]
+        let letters = Dictionary(uniqueKeysWithValues: "ABCDEFGHIJKLMNOPQRSTUVWXYZ".map { (String($0), 7) })
+        let counts = hot.merging(letters) { hotCount, _ in hotCount }
+        let effects = KeyboardHeatmapEffects(positions: keyboardPositions, counts: counts)
+        var random = SeededRandom(state: 51)
+        var seen: Set<Pattern> = []
+        var anchors: Set<Constellation.Anchor.Placement> = []
+        for _ in 0..<180 {
+            let animation = constellations(effects.frames(for: .constellation, from: nil, using: &random))
+            let result = try XCTUnwrap(animation.last)
+            guard let pattern = result.namedGroups.first?.pattern, catalog.contains(pattern) else { continue }
+            seen.insert(pattern)
+            anchors.formUnion(result.stars.keys.map(\.placement))
+            let keys = Set(result.stars.keys.map(\.key))
+            XCTAssertTrue(keys.isSubset(of: counts.keys))
+            XCTAssertGreaterThanOrEqual(keys.intersection(hot.keys).count, 2)
+            XCTAssertTrue(result.links.allSatisfy { $0.from != $0.to && result.stars[$0.from] != nil && result.stars[$0.to] != nil })
+        }
+        XCTAssertEqual(seen, catalog)
+        XCTAssertEqual(anchors, Set(Constellation.Anchor.Placement.allCases))
+    }
+
+    func testFourActiveKeysCanUseSeparateCornersAndReplayAnotherFigure() throws {
+        let counts = ["E": 800, "R": 700, "D": 600, "F": 500]
+        let effects = KeyboardHeatmapEffects(positions: keyboardPositions, counts: counts)
+        let seed = try XCTUnwrap((0..<48).first { seed in
+            var random = SeededRandom(state: UInt64(seed))
+            let result = constellations(effects.frames(for: .constellation, from: "E", using: &random)).last
+            return result?.namedGroups.first?.pattern == .cepheus
+        })
+        var random = SeededRandom(state: UInt64(seed))
+        let animation = constellations(effects.frames(for: .constellation, from: "E", using: &random))
+        let result = try XCTUnwrap(animation.last)
+        let starsByKey = Dictionary(grouping: result.stars.keys, by: \.key)
+        XCTAssertEqual(animation.first?.stars.keys.first?.key, "E")
+        XCTAssertTrue(starsByKey.keys.allSatisfy { counts[$0] != nil })
+        XCTAssertTrue(starsByKey.values.contains { $0.count == 2 && $0.allSatisfy { $0.placement != .center } })
+        XCTAssertEqual(result.links.count, 5)
+
+        var replay = SeededRandom(state: UInt64(seed))
+        let next = constellations(effects.frames(for: .constellation, from: "E", avoiding: [.cepheus], using: &replay))
+        XCTAssertFalse(next.last?.namedGroups.contains { $0.pattern == .cepheus } ?? true)
     }
 
     private func constellations(_ frames: [KeyboardHeatmapEffects.Frame]) -> [Constellation] {

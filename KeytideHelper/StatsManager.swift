@@ -1,5 +1,6 @@
 import Foundation
 import Cocoa
+import Compression
 
 private func canonicalKeyPart(_ rawKeyPart: String) -> String {
     let trimmed = rawKeyPart.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -14,6 +15,7 @@ private func canonicalKeyPart(_ rawKeyPart: String) -> String {
 }
 
 private func canonicalKeyName(_ keyName: String) -> String {
+    if !keyName.contains("+") { return canonicalKeyPart(keyName) }
     let trimmed = keyName.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed == "+" {
         return "+"
@@ -101,22 +103,63 @@ class StatsManager {
         }
     }
 
-    private struct CaptureHistory<Day: Decodable>: Decodable {
-        let history: [String: Day]
+    private struct CaptureHistory<History: Decodable>: Decodable {
+        let history: History
+    }
+
+    /// The menu keeps the latest full Helper message for reopening pages and exports.
+    /// Large messages are packed once on receipt, before delivery to the main thread.
+    enum HistoryPayload {
+        case plain(Data)
+        case lz4(Data, originalCount: Int)
+
+        init(_ data: Data) {
+            guard data.count >= 256 * 1024 else { self = .plain(data); return }
+            // Keep compression only if it saves at least a quarter of the message.
+            let buffer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: data.count - data.count / 4)
+            defer { buffer.deallocate() }
+            let written = data.withUnsafeBytes { source in
+                compression_encode_buffer(buffer.baseAddress!, buffer.count,
+                    source.bindMemory(to: UInt8.self).baseAddress!, data.count, nil, COMPRESSION_LZ4)
+            }
+            self = written > 0 ? .lz4(Data(bytes: buffer.baseAddress!, count: written), originalCount: data.count) : .plain(data)
+        }
+
+        var data: Data? {
+            switch self {
+            case let .plain(data): return data
+            case let .lz4(packed, originalCount):
+                var unpacked = Data(count: originalCount)
+                let written = unpacked.withUnsafeMutableBytes { destination in
+                    packed.withUnsafeBytes { source in
+                        compression_decode_buffer(destination.bindMemory(to: UInt8.self).baseAddress!, originalCount,
+                            source.bindMemory(to: UInt8.self).baseAddress!, packed.count, nil, COMPRESSION_LZ4)
+                    }
+                }
+                return written == originalCount ? unpacked : nil
+            }
+        }
     }
 
     private struct ChartDay: Decodable {
         let totals: DailyStats
 
         init(from decoder: Decoder) throws {
-            totals = try DailyStats(from: decoder, includingBreakdowns: false)
+            totals = try DailyStats(from: decoder, breakdowns: .none)
         }
     }
 
-    /// Used by the menu process when dailyStats is stale or missing. Historical
-    /// records with valid date keys can be skipped without decoding their values.
-    private struct StoredDay: Decodable {
-        private typealias Lookup = (date: Date, formatter: DateFormatter, calendar: Calendar)
+    private struct GlobalDay: Decodable {
+        let stats: DailyStats
+
+        init(from decoder: Decoder) throws {
+            stats = try DailyStats(from: decoder, breakdowns: .global)
+        }
+    }
+
+    /// Materialize just the requested days from either stored history or a Helper snapshot.
+    private struct SelectedDays: Decodable {
+        private typealias Lookup = (keys: Set<String>, formatter: DateFormatter, calendar: Calendar)
         private static let lookupKey = CodingUserInfoKey(rawValue: "Keytide.storedDayLookup")!
 
         private struct DayKey: CodingKey {
@@ -126,12 +169,14 @@ class StatsManager {
             init?(intValue: Int) { return nil }
         }
 
-        let value: DailyStats?
+        let days: [String: DailyStats]
 
-        static func read(from data: Data, date: Date, formatter: DateFormatter, calendar: Calendar) -> DailyStats? {
+        static func read(from data: Data, envelope: Bool, keys: Set<String>,
+                         formatter: DateFormatter, calendar: Calendar) -> [String: DailyStats]? {
             let decoder = JSONDecoder()
-            decoder.userInfo[lookupKey] = (date, formatter, calendar) as Lookup
-            return try? decoder.decode(Self.self, from: data).value
+            decoder.userInfo[lookupKey] = (keys, formatter, calendar) as Lookup
+            if envelope { return try? decoder.decode(CaptureHistory<Self>.self, from: data).history.days }
+            return try? decoder.decode(Self.self, from: data).days
         }
 
         init(from decoder: Decoder) throws {
@@ -139,26 +184,26 @@ class StatsManager {
                 throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Missing day lookup"))
             }
             let entries = try decoder.container(keyedBy: DayKey.self)
-            let formatter = lookup.formatter
-            let today = formatter.string(from: lookup.date)
-            let key = DayKey(stringValue: today)
-            if entries.contains(key) {
-                value = try entries.decode(DailyStats.self, forKey: key)
-                return
+            var selected: [String: DailyStats] = [:]
+            for key in lookup.keys {
+                let codingKey = DayKey(stringValue: key)
+                if entries.contains(codingKey) { selected[key] = try entries.decode(DailyStats.self, forKey: codingKey) }
             }
-            // Match normalizedHistory's fallback and tie-break for legacy keys.
-            let legacy = entries.allKeys.filter { key in
-                guard let date = formatter.date(from: key.stringValue) else { return true }
-                return formatter.string(from: date) != key.stringValue
-            }
-            for key in legacy.sorted(by: { $0.stringValue < $1.stringValue }) {
-                let day = try entries.decode(DailyStats.self, forKey: key)
-                if formatter.string(from: lookup.calendar.startOfDay(for: day.date)) == today {
-                    value = day
-                    return
+            if selected.count < lookup.keys.count {
+                // Valid date keys win. Among legacy keys the first lexical match wins.
+                let formatter = lookup.formatter
+                let legacy = entries.allKeys.filter { key in
+                    guard let date = formatter.date(from: key.stringValue) else { return true }
+                    return formatter.string(from: date) != key.stringValue
+                }
+                for key in legacy.sorted(by: { $0.stringValue < $1.stringValue }) {
+                    let day = try entries.decode(DailyStats.self, forKey: key)
+                    let fallback = formatter.string(from: lookup.calendar.startOfDay(for: day.date))
+                    if lookup.keys.contains(fallback), selected[fallback] == nil { selected[fallback] = day }
+                    if selected.count == lookup.keys.count { break }
                 }
             }
-            value = nil
+            days = selected
         }
     }
 
@@ -193,8 +238,10 @@ class StatsManager {
     private let mouseDistanceCalibrationFactorKey = "mouseDistanceCalibrationFactor"
     private let dateFormatter: DateFormatter
     private var history: [String: DailyStats] = [:]
-    private var captureHistoryPayload: Data?
+    private var captureHistoryPayload: HistoryPayload?
     private var presentationHistory: [String: DailyStats]?
+    private var recentAppHistory: (keys: Set<String>, days: [String: DailyStats])?
+    private var globalHistory: [String: DailyStats]?
     private var chartHistory: [String: DailyStats]?
     private var saveTimer: Timer?
     private var statsUpdateTimer: Timer?
@@ -438,7 +485,7 @@ class StatsManager {
             if ownsCaptureStore {
                 if let day = history[todayKey] { currentStats = day }
             } else if let data = defaults.data(forKey: historyKey),
-                      let day = StoredDay.read(from: data, date: today, formatter: dateFormatter, calendar: calendar) {
+                      let day = SelectedDays.read(from: data, envelope: false, keys: [todayKey], formatter: dateFormatter, calendar: calendar)?[todayKey] {
                 currentStats = normalizedDailyStats(day)
                 currentStats.date = today
             }
@@ -464,25 +511,16 @@ class StatsManager {
     
     // MARK: - 数据更新方法
 
-    private func updateAppStats(for identity: AppIdentity, update: (inout AppStats) -> Void) {
-        guard appStatsEnabled else { return }
-        let bundleId = identity.bundleId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !bundleId.isEmpty else { return }
-        var stats = currentStats.appStats[bundleId] ?? AppStats(bundleId: bundleId, displayName: identity.displayName)
-        stats.updateDisplayName(identity.displayName)
-        update(&stats)
-        currentStats.appStats[bundleId] = stats
-    }
-
     /// 调用前必须持有 statsStateLock
     private func updateAppStatsLocked(for identity: AppIdentity, update: (inout AppStats) -> Void) {
         guard appStatsEnabled else { return }
         let bundleId = identity.bundleId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !bundleId.isEmpty else { return }
-        var stats = currentStats.appStats[bundleId] ?? AppStats(bundleId: bundleId, displayName: identity.displayName)
-        stats.updateDisplayName(identity.displayName)
-        update(&stats)
-        currentStats.appStats[bundleId] = stats
+        func record(in stats: inout AppStats) {
+            stats.updateDisplayName(identity.displayName)
+            update(&stats)
+        }
+        record(in: &currentStats.appStats[bundleId, default: AppStats(bundleId: bundleId, displayName: identity.displayName)])
     }
 
     func incrementKeyPresses(keyName: String? = nil, appIdentity: AppIdentity? = nil) {
@@ -1009,12 +1047,14 @@ class StatsManager {
                                calibrationFactor: mouseDistanceCalibrationFactor)
     }
 
-    func receiveCaptureUpdate(_ snapshot: CaptureUpdate, historyPayload: Data?) {
+    func receiveCaptureUpdate(_ snapshot: CaptureUpdate, historyPayload: HistoryPayload?) {
         guard !ownsCaptureStore else { return }
         statsStateLock.lock()
         if let historyPayload {
             captureHistoryPayload = historyPayload
             presentationHistory = nil
+            recentAppHistory = nil
+            globalHistory = nil
             chartHistory = nil
         }
         let menuCountsChanged = snapshot.current.keyPresses != currentStats.keyPresses
@@ -1041,6 +1081,8 @@ class StatsManager {
         guard !ownsCaptureStore else { return }
         statsStateLock.lock()
         presentationHistory = nil
+        recentAppHistory = nil
+        globalHistory = nil
         chartHistory = nil
         statsStateLock.unlock()
     }
@@ -1050,6 +1092,7 @@ class StatsManager {
         if ownsCaptureStore { return history }
         if let presentationHistory { return presentationHistory }
         let decoded = receivedHistory(DailyStats.self) ?? normalizedHistory(loadHistory(DailyStats.self))
+        recentAppHistory = nil
         presentationHistory = decoded
         return decoded
     }
@@ -1058,6 +1101,7 @@ class StatsManager {
     /// separate so an export or a detail view always gets every breakdown.
     private func chartHistoryLocked() -> [String: DailyStats] {
         if ownsCaptureStore { return history }
+        if let globalHistory { return globalHistory }
         if let chartHistory { return chartHistory }
         let days: [String: DailyStats]
         if let presentationHistory {
@@ -1077,8 +1121,8 @@ class StatsManager {
     }
 
     private func receivedHistory<Day: Decodable>(_ type: Day.Type) -> [String: Day]? {
-        guard let captureHistoryPayload else { return nil }
-        return try? JSONDecoder().decode(CaptureHistory<Day>.self, from: captureHistoryPayload).history
+        guard let data = captureHistoryPayload?.data else { return nil }
+        return try? JSONDecoder().decode(CaptureHistory<[String: Day]>.self, from: data).history
     }
 
     private func loadStats() -> DailyStats? {
@@ -1283,26 +1327,22 @@ class StatsManager {
 
     private func mergedCounterMap(_ lhs: [String: Int], _ rhs: [String: Int]) -> [String: Int] {
         var merged = normalizedKeyPressCounts(lhs)
-        for (key, value) in rhs {
-            let canonicalName = canonicalKeyName(key)
-            let count = max(0, value)
-            guard !canonicalName.isEmpty, count > 0 else { continue }
-            merged[canonicalName] = safeAdd(merged[canonicalName] ?? 0, count)
-        }
+        addKeyPressCounts(rhs, to: &merged)
         return merged
     }
 
     private func normalizedKeyPressCounts(_ counts: [String: Int]) -> [String: Int] {
         var normalized: [String: Int] = [:]
-
-        for (key, value) in counts {
-            let canonicalName = canonicalKeyName(key)
-            let count = max(0, value)
-            guard !canonicalName.isEmpty, count > 0 else { continue }
-            normalized[canonicalName] = safeAdd(normalized[canonicalName] ?? 0, count)
-        }
-
+        addKeyPressCounts(counts, to: &normalized)
         return normalized
+    }
+
+    private func addKeyPressCounts(_ counts: [String: Int], to totals: inout [String: Int]) {
+        for (key, count) in counts where count > 0 {
+            let name = canonicalKeyName(key)
+            guard !name.isEmpty else { continue }
+            totals[name] = safeAdd(totals[name] ?? 0, count)
+        }
     }
 
     private func mergedAppStats(_ lhs: [String: AppStats], _ rhs: [String: AppStats]) -> [String: AppStats] {
@@ -1891,9 +1931,18 @@ extension StatsManager {
     // MARK: - 全量统计
     
     func getAllTimeStats() -> AllTimeStats {
+        allTimeStats(in: displayHistorySnapshot())
+    }
+
+    func allTimeActivity() -> (stats: AllTimeStats, days: [(date: Date, keyPresses: Int, clicks: Int)]) {
+        let history = displayHistorySnapshot()
+        return (allTimeStats(in: history), history.values.map { ($0.date, $0.keyPresses, $0.totalClicks) })
+    }
+
+    private func allTimeStats(in history: [String: DailyStats]) -> AllTimeStats {
         var totalStats = AllTimeStats.initial()
         var weekdayStats: [Int: (total: Int, count: Int)] = [:]
-        for daily in displayHistorySnapshot().values {
+        for daily in history.values {
             aggregate(daily: daily, into: &totalStats, weekdays: &weekdayStats)
         }
 
@@ -1975,8 +2024,26 @@ extension StatsManager {
         return currentStats
     }
 
+    /// Global keyboard and activity pages share normalized days. Full per-app
+    /// detail remains independently available for the app browser and exports.
     private func displayHistorySnapshot() -> [String: DailyStats] {
-        localHistorySnapshot()
+        if ownsCaptureStore { return localHistorySnapshot() }
+        statsStateLock.lock()
+        var snapshot: [String: DailyStats]
+        if let globalHistory {
+            snapshot = globalHistory
+        } else {
+            let days = receivedHistory(GlobalDay.self) ?? loadHistory(GlobalDay.self)
+            snapshot = normalizedHistory(days.mapValues(\.stats))
+            globalHistory = snapshot
+            chartHistory = nil
+        }
+        var current = currentStats
+        statsStateLock.unlock()
+        if current.hasActivityTotals { current.appStats = [:] }
+        current = normalizedDailyStats(current)
+        snapshot[dateFormatter.string(from: current.date)] = current
+        return snapshot
     }
     
     private func aggregate(daily: DailyStats, into total: inout AllTimeStats, weekdays: inout [Int: (total: Int, count: Int)]) {
@@ -1994,7 +2061,7 @@ extension StatsManager {
             daily.scrollSessions
         ])
 
-        for (key, count) in normalizedKeyPressCounts(daily.keyPressCounts) {
+        for (key, count) in daily.keyPressCounts {
             total.keyPressCounts[key] = safeAdd(total.keyPressCounts[key] ?? 0, count)
         }
 
@@ -2066,24 +2133,37 @@ extension StatsManager {
     }
 
     private func appStatsDays(in range: AppStatsRange) -> [DailyStats] {
+        if range == .today { return [displayCurrentStats()] }
+        let dates = range == .all ? [] : appStatsDates(in: range)
+        let keys = dates.map(dateFormatter.string(from:))
         statsStateLock.lock()
-        let history = range == .today ? [:] : readHistoryLocked()
         let current = currentStats
+        let currentKey = dateFormatter.string(from: current.date)
+        let days = range == .all ? readHistoryLocked() : recentAppDaysLocked(for: Set(keys).subtracting([currentKey]))
         statsStateLock.unlock()
-        switch range {
-        case .today:
-            return [current]
-        case .week, .month:
-            let todayKey = dateFormatter.string(from: current.date)
-            return appStatsDates(in: range).map { date in
-                let key = dateFormatter.string(from: date)
-                return key == todayKey ? current : (history[key] ?? DailyStats(date: date))
-            }
-        case .all:
-            let todayKey = dateFormatter.string(from: current.date)
-            return history.values.filter { dateFormatter.string(from: $0.date) != todayKey }
-                + [current]
+
+        if range == .all {
+            return days.values.filter { dateFormatter.string(from: $0.date) != currentKey } + [current]
         }
+        return zip(keys, dates).map { key, date in
+            key == currentKey ? current : (days[key] ?? DailyStats(date: date))
+        }
+    }
+
+    private func recentAppDaysLocked(for keys: Set<String>) -> [String: DailyStats] {
+        if ownsCaptureStore { return history }
+        if let presentationHistory { return presentationHistory }
+        if let recentAppHistory, keys.isSubset(of: recentAppHistory.keys) { return recentAppHistory.days }
+        let calendar = environment.calendar()
+        func selected(_ data: Data, envelope: Bool) -> [String: DailyStats]? {
+            SelectedDays.read(from: data, envelope: envelope, keys: keys, formatter: dateFormatter, calendar: calendar)
+        }
+        let decoded = captureHistoryPayload?.data.flatMap { selected($0, envelope: true) }
+            ?? userDefaults.data(forKey: historyKey).flatMap { selected($0, envelope: false) }
+            ?? [:]
+        let days = normalizedHistory(decoded)
+        recentAppHistory = (keys, days)
+        return days
     }
 
     private func appStatsDates(in range: AppStatsRange) -> [Date] {
@@ -2118,23 +2198,25 @@ extension StatsManager {
     private func mergeAppStats(from daily: DailyStats, into totals: inout [String: AppStats]) {
         guard !daily.appStats.isEmpty else { return }
         for (bundleId, appStats) in daily.appStats {
-            var total = totals[bundleId] ?? AppStats(bundleId: bundleId, displayName: appStats.displayName)
-            if !appStats.displayName.isEmpty {
-                total.displayName = appStats.displayName
-            }
-            total.keyPresses = safeAdd(total.keyPresses, appStats.keyPresses)
-            total.keyPressCounts = mergedCounterMap(total.keyPressCounts, appStats.keyPressCounts)
-            total.leftClicks = safeAdd(total.leftClicks, appStats.leftClicks)
-            total.rightClicks = safeAdd(total.rightClicks, appStats.rightClicks)
-            total.middleClicks = safeAdd(total.middleClicks, appStats.middleClicks)
-            total.sideBackClicks = safeAdd(total.sideBackClicks, appStats.sideBackClicks)
-            total.sideForwardClicks = safeAdd(total.sideForwardClicks, appStats.sideForwardClicks)
-            total.scrollDistance = safeAddDistance(total.scrollDistance, appStats.scrollDistance)
-            total.scrollSessions = aggregateScrollSessionCounts([
-                total.scrollSessions,
-                appStats.scrollSessions
-            ])
-            totals[bundleId] = total
+            accumulate(appStats, into: &totals[bundleId, default: AppStats(bundleId: bundleId, displayName: appStats.displayName)])
         }
+    }
+
+    private func accumulate(_ appStats: AppStats, into total: inout AppStats) {
+        if !appStats.displayName.isEmpty {
+            total.displayName = appStats.displayName
+        }
+        total.keyPresses = safeAdd(total.keyPresses, appStats.keyPresses)
+        addKeyPressCounts(appStats.keyPressCounts, to: &total.keyPressCounts)
+        total.leftClicks = safeAdd(total.leftClicks, appStats.leftClicks)
+        total.rightClicks = safeAdd(total.rightClicks, appStats.rightClicks)
+        total.middleClicks = safeAdd(total.middleClicks, appStats.middleClicks)
+        total.sideBackClicks = safeAdd(total.sideBackClicks, appStats.sideBackClicks)
+        total.sideForwardClicks = safeAdd(total.sideForwardClicks, appStats.sideForwardClicks)
+        total.scrollDistance = safeAddDistance(total.scrollDistance, appStats.scrollDistance)
+        total.scrollSessions = aggregateScrollSessionCounts([
+            total.scrollSessions,
+            appStats.scrollSessions
+        ])
     }
 }

@@ -245,15 +245,17 @@ struct DailyStats: Codable {
         case peakCPS
     }
 
+    enum Breakdowns { case all, global, none }
+
     init(from decoder: Decoder) throws {
-        try self.init(from: decoder, includingBreakdowns: true)
+        try self.init(from: decoder, breakdowns: .all)
     }
 
-    init(from decoder: Decoder, includingBreakdowns: Bool) throws {
+    init(from decoder: Decoder, breakdowns: Breakdowns) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         date = try container.decodeIfPresent(Date.self, forKey: .date) ?? Calendar.current.startOfDay(for: Date())
         keyPresses = try container.decodeIfPresent(Int.self, forKey: .keyPresses) ?? 0
-        keyPressCounts = includingBreakdowns ? try container.decodeIfPresent([String: Int].self, forKey: .keyPressCounts) ?? [:] : [:]
+        keyPressCounts = breakdowns == .none ? [:] : try container.decodeIfPresent([String: Int].self, forKey: .keyPressCounts) ?? [:]
         leftClicks = try container.decodeIfPresent(Int.self, forKey: .leftClicks) ?? 0
         rightClicks = try container.decodeIfPresent(Int.self, forKey: .rightClicks) ?? 0
         middleClicks = try container.decodeIfPresent(Int.self, forKey: .middleClicks) ?? 0
@@ -265,9 +267,13 @@ struct DailyStats: Codable {
         mouseDistance = try container.decodeIfPresent(Double.self, forKey: .mouseDistance) ?? 0
         scrollDistance = try container.decodeIfPresent(Double.self, forKey: .scrollDistance) ?? 0
         scrollSessions = try container.decodeIfPresent(Int.self, forKey: .scrollSessions) ?? 0
-        appStats = includingBreakdowns ? try container.decodeIfPresent([String: AppStats].self, forKey: .appStats) ?? [:] : [:]
+        appStats = [:]
         peakKPS = Self.decodeIntOrDouble(container: container, key: .peakKPS)
         peakCPS = Self.decodeIntOrDouble(container: container, key: .peakCPS)
+        // Some legacy days only contain app records. They still count as active days.
+        if breakdowns == .all || (breakdowns == .global && !hasActivityTotals) {
+            appStats = try container.decodeIfPresent([String: AppStats].self, forKey: .appStats) ?? [:]
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -292,7 +298,7 @@ struct DailyStats: Codable {
         saturatingNonnegativeSum([leftClicks, rightClicks, middleClicks, sideBackClicks, sideForwardClicks])
     }
 
-    var hasAnyActivity: Bool {
+    var hasActivityTotals: Bool {
         keyPresses > 0 ||
             leftClicks > 0 ||
             rightClicks > 0 ||
@@ -301,9 +307,11 @@ struct DailyStats: Codable {
             sideForwardClicks > 0 ||
             mouseDistance > 0 ||
             scrollDistance > 0 ||
-            scrollSessions > 0 ||
-            !keyPressCounts.isEmpty ||
-            !appStats.isEmpty
+            scrollSessions > 0
+    }
+
+    var hasAnyActivity: Bool {
+        hasActivityTotals || !keyPressCounts.isEmpty || !appStats.isEmpty
     }
 
     /// 纠错率 (Delete + ForwardDelete / Total Keys)
