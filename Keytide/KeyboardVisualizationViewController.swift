@@ -3,6 +3,16 @@ import UniformTypeIdentifiers
 
 /// A full-width, on-demand 3D stage. The two menu styles share one layout.
 final class KeyboardVisualizationViewController: NSViewController {
+    struct BrowsingState {
+        let model: Int
+        let showsTrackpad: Bool
+        let prefersInteraction: Bool
+        let replayCollapsed: Bool
+        let trackpadChoices: TrackpadStudioView.Choices?
+        let growth: GrowthKeyboardViewController.BrowsingState
+    }
+
+    private var initialState: BrowsingState?
     private let growth = GrowthKeyboardViewController(manager: .shared, startsIn3D: true,
         loadReplay: { day, completion in KeyReplayRecording.shared.load(day: day, completion: completion) })
     private let models = NSSegmentedControl()
@@ -33,10 +43,24 @@ final class KeyboardVisualizationViewController: NSViewController {
     private var replayHeight: NSLayoutConstraint?
     private var prefersInteraction = false
     private var resourcesReleased = false
+    private var deferredGrowthResetToToday: Bool?
     private var style: MenuUIStyle = .standard
     private var palette: KeyboardStudioPalette { KeyboardStudioPalette(style: style) }
     var onPageChanged: ((Bool) -> Void)?
     var showsGrowth: Bool { true }
+
+    init(restoring state: BrowsingState? = nil) {
+        initialState = state
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    var browsingState: BrowsingState {
+        BrowsingState(model: models.selectedSegment, showsTrackpad: showsTrackpad,
+                      prefersInteraction: prefersInteraction, replayCollapsed: replayCollapsed,
+                      trackpadChoices: trackpad?.choices ?? trackpadChoices, growth: growth.browsingState)
+    }
 
     deinit {
         typingSelectionObservers.values.forEach(NotificationCenter.default.removeObserver)
@@ -45,6 +69,11 @@ final class KeyboardVisualizationViewController: NSViewController {
     }
 
     override func loadView() {
+        let state = initialState
+        initialState = nil
+        trackpadChoices = state?.trackpadChoices
+        replayCollapsed = state?.replayCollapsed ?? false
+        prefersInteraction = state?.prefersInteraction ?? false
         style = MenuUIStyle.current
         view = NSView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800))
         view.addSubview(stage)
@@ -62,7 +91,8 @@ final class KeyboardVisualizationViewController: NSViewController {
         devices.segmentCount = 2
         devices.setLabel(NSLocalizedString("trackpad.keyboard", comment: ""), forSegment: 0)
         devices.setLabel(NSLocalizedString("trackpad.title", comment: ""), forSegment: 1)
-        devices.selectedSegment = 0; devices.controlSize = .small
+        devices.selectedSegment = state?.showsTrackpad == true ? 1 : 0
+        devices.controlSize = .small
         devices.target = self; devices.action = #selector(changeDevice)
         devices.setAccessibilityLabel(NSLocalizedString("trackpad.stage", comment: ""))
         totalCaption.stringValue = NSLocalizedString("growth.metric.caption", comment: "")
@@ -76,7 +106,8 @@ final class KeyboardVisualizationViewController: NSViewController {
         models.segmentCount = 2
         models.setLabel("Mac", forSegment: 0)
         models.setLabel(NSLocalizedString("keyboard.model.mechanical", comment: ""), forSegment: 1)
-        models.selectedSegment = 0; models.segmentStyle = .rounded
+        models.selectedSegment = state?.model ?? 0
+        models.segmentStyle = .rounded
         models.target = self; models.action = #selector(changeModel)
         models.setAccessibilityLabel(NSLocalizedString("keyboard.model.choose", comment: ""))
         interaction.segmentCount = 2
@@ -106,7 +137,7 @@ final class KeyboardVisualizationViewController: NSViewController {
         stage.addSubview(content)
         growth.transportView.translatesAutoresizingMaskIntoConstraints = false
         stage.addSubview(growth.transportView)
-        replayHeight = growth.transportView.heightAnchor.constraint(equalToConstant: 48)
+        replayHeight = growth.transportView.heightAnchor.constraint(equalToConstant: replayCollapsed ? 24 : 48)
         NSLayoutConstraint.activate([
             header.leadingAnchor.constraint(equalTo: stage.leadingAnchor, constant: 28),
             header.trailingAnchor.constraint(equalTo: stage.trailingAnchor, constant: -28),
@@ -122,7 +153,6 @@ final class KeyboardVisualizationViewController: NSViewController {
         ])
 
         replayToggle.bezelStyle = .inline; replayToggle.isBordered = false
-        replayToggle.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
         replayToggle.target = self; replayToggle.action = #selector(toggleReplay)
         replayToggle.setAccessibilityLabel(NSLocalizedString("keyboard.replay.toggle", comment: "Keyboard Studio"))
         replayToggle.translatesAutoresizingMaskIntoConstraints = false
@@ -189,8 +219,10 @@ final class KeyboardVisualizationViewController: NSViewController {
             typingPanel.widthAnchor.constraint(equalToConstant: 270)
         ])
         typingPanel.isHidden = true
+        if let state { growth.restoreBrowsing(state.growth) }
+        updateReplayDisclosure()
         applyStyle()
-        changeModel()
+        changeDevice()
         styleObserver = NotificationCenter.default.addObserver(forName: .menuUIStyleDidChange,
             object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
@@ -321,21 +353,21 @@ final class KeyboardVisualizationViewController: NSViewController {
     }
 
     func showDay(_ date: Date) {
-        _ = view
-        devices.selectedSegment = 0; changeDevice()
-        prefersInteraction = false
-        changeModel()
-        if replayCollapsed { toggleReplay() }
+        showGrowthWithReplayControls()
         growth.showDay(date)
     }
 
     func showExample() {
-        _ = view
-        devices.selectedSegment = 0; changeDevice()
-        prefersInteraction = false
-        changeModel()
-        if replayCollapsed { toggleReplay() }
+        showGrowthWithReplayControls()
         growth.showExample()
+    }
+
+    private func showGrowthWithReplayControls() {
+        _ = view
+        prefersInteraction = false
+        devices.selectedSegment = 0
+        changeDevice()
+        if replayCollapsed { toggleReplay() }
     }
 
     @objc private func exportKeyboardImage() {
@@ -390,12 +422,16 @@ final class KeyboardVisualizationViewController: NSViewController {
             context.allowsImplicitAnimation = !reduceMotion
             growth.transportView.superview?.layoutSubtreeIfNeeded()
         }
+        updateReplayDisclosure()
+        insight.isHidden = selection == nil || prefersInteraction
+        positionInsight()
+    }
+
+    private func updateReplayDisclosure() {
         growth.setTransportCollapsed(replayCollapsed)
         replayToggle.image = NSImage(systemSymbolName: replayCollapsed ? "chevron.up" : "chevron.down",
             accessibilityDescription: nil)
         replayToggle.setAccessibilityExpanded(!replayCollapsed)
-        insight.isHidden = selection == nil || prefersInteraction
-        positionInsight()
     }
 
     private func presentTrackpad() {
@@ -435,7 +471,13 @@ final class KeyboardVisualizationViewController: NSViewController {
             growth.transportView.isHidden = true; replayToggle.isHidden = true
             typingPanel.isHidden = true; insight.isHidden = true
             view.window?.makeFirstResponder(devices)
-        } else { changeModel() }
+        } else {
+            changeModel()
+            if let resetToToday = deferredGrowthResetToToday {
+                deferredGrowthResetToToday = nil
+                growth.refreshData(resetToToday: resetToToday)
+            }
+        }
     }
 
     @objc private func changeModel() {
@@ -565,8 +607,12 @@ final class KeyboardVisualizationViewController: NSViewController {
             resourcesReleased = false
             if !showsTrackpad { changeModel() }
         }
-        if showsTrackpad { presentTrackpad() }
-        growth.setPresented(!growth.view.isHidden && !showsTrackpad)
+        if showsTrackpad {
+            presentTrackpad()
+            deferredGrowthResetToToday = resetToToday || deferredGrowthResetToToday == true
+            return
+        }
+        growth.setPresented(!growth.view.isHidden)
         growth.refreshData(resetToToday: resetToToday)
         content.onGestureEnd?()
     }

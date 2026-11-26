@@ -484,6 +484,20 @@ final class GrowthKeyboard3DTests: XCTestCase {
         reopened.onSelectionChanged = { reopenedSelection = $0 }
         reopened.selectKey("A")
         XCTAssertEqual(reopenedSelection?.count, 10)
+
+        // A rebuilt page must still return from the example to the user's real day.
+        page.showDay(first)
+        page.showExample()
+        page.releaseResourcesForClosedWindow()
+        let rebuilt = GrowthKeyboardViewController(manager: manager)
+        rebuilt.restoreBrowsing(page.browsingState)
+        rebuilt.refreshData(resetToToday: true)
+        XCTAssertEqual(rebuilt.browsingState.scope, 3)
+        let back = try XCTUnwrap(descendants(rebuilt.view).compactMap { $0 as? NSButton }
+            .first { $0.action == NSSelectorFromString("showToday") })
+        rebuilt.perform(try XCTUnwrap(back.action))
+        XCTAssertEqual(rebuilt.browsingState.scope, 1)
+        XCTAssertEqual(rebuilt.browsingState.inspectionDate, first)
     }
 
     func testMechanicalGrowthHeightIsFixedBoundedAndMonotonic() {

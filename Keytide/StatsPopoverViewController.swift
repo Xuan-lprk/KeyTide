@@ -1074,6 +1074,7 @@ struct AnimatedStatValueView: View {
                     .monospacedDigit()
                     .foregroundStyle(.primary)
                     .contentTransition(.numericText())
+                    .environment(\.contentTransitionAddsDrawingGroup, !reduceMotion)
             } else {
                 Text(viewModel.text)
                     .font(.system(size: fontSize, weight: (compact || prominent) ? .medium : .semibold))

@@ -81,6 +81,29 @@ final class GrowthKeyboardViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { pausePlayback(); observers.forEach { NotificationCenter.default.removeObserver($0) } }
 
+    struct BrowsingState {
+        let scope: Int
+        let inspectionDate: Date?
+        let rangeStart: Date?
+        let realScopeBeforeExample: Int
+        let realDateBeforeExample: Date?
+    }
+
+    var browsingState: BrowsingState {
+        BrowsingState(scope: scope, inspectionDate: inspectionDate, rangeStart: rangeStart,
+                      realScopeBeforeExample: realScopeBeforeExample, realDateBeforeExample: realDateBeforeExample)
+    }
+
+    func restoreBrowsing(_ state: BrowsingState) {
+        _ = view
+        scopeSelector.selectItem(at: state.scope)
+        previousScope = state.scope
+        inspectionDate = state.inspectionDate
+        rangeStart = state.rangeStart
+        realScopeBeforeExample = state.realScopeBeforeExample
+        realDateBeforeExample = state.realDateBeforeExample
+    }
+
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 620))
         let stack = NSStackView()
@@ -310,6 +333,7 @@ final class GrowthKeyboardViewController: NSViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        guard !view.isHiddenOrHasHiddenAncestor else { return }
         setPresented(true)
         if presentation == nil { refreshData(resetToToday: true) }
     }
@@ -358,7 +382,7 @@ final class GrowthKeyboardViewController: NSViewController {
     }
 
     private var isWindowActive: Bool {
-        guard isPresented, let window = view.window else { return false }
+        guard isPresented, !view.isHiddenOrHasHiddenAncestor, let window = view.window else { return false }
         return window.isVisible && window.isKeyWindow && !window.isMiniaturized
             && window.occlusionState.contains(.visible) && NSApp.isActive
     }
@@ -404,7 +428,7 @@ final class GrowthKeyboardViewController: NSViewController {
                 guard let self else { return }
                 if name == NSApplication.didBecomeActiveNotification {
                     self.updateActive()
-                    if self.shows3D { self.renderSelection() }
+                    if self.isWindowActive && self.shows3D { self.renderSelection() }
                 } else {
                     self.cancelReplayLoad?(); self.cancelReplayLoad = nil
                     self.playback.setActive(false); self.spatialRenderer?.setActive(false)

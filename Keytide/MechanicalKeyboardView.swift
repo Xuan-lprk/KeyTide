@@ -252,7 +252,8 @@ final class MechanicalKeyboardView: NSView, MTKViewDelegate {
     }
     private var eligible: Bool {
         guard let window else { return false }
-        return window.isVisible && !window.isMiniaturized && !isHiddenOrHasHiddenAncestor && !NSApp.isHidden
+        return window.isVisible && window.occlusionState.contains(.visible) && !window.isMiniaturized
+            && !isHiddenOrHasHiddenAncestor && !NSApp.isHidden
     }
     init(model: MechanicalKeyboardScene, embedded: Bool = false) {
         self.model = model
@@ -319,13 +320,20 @@ final class MechanicalKeyboardView: NSView, MTKViewDelegate {
         for name in [NSWindow.didResignKeyNotification, NSWindow.didMiniaturizeNotification, NSWindow.willCloseNotification] {
             if let window { observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.cancel() }) }
         }
+        if let window {
+            observers.append(center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                object: window, queue: .main) { [weak self] _ in
+                guard let self else { return }
+                if self.eligible { self.updateDisplayResolution() } else { self.cancel() }
+            })
+        }
         for name in [NSApplication.didResignActiveNotification, NSApplication.didHideNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.cancel() })
         }
         if window != nil { DispatchQueue.main.async { [weak self] in self?.drawOnce() } }
     }
     override func viewDidHide() { super.viewDidHide(); cancel() }
-    override func viewDidUnhide() { super.viewDidUnhide(); drawOnce() }
+    override func viewDidUnhide() { super.viewDidUnhide(); updateDisplayResolution() }
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { drawOnce() }
     func draw(in view: MTKView) {
         guard eligible else { return }
@@ -335,7 +343,7 @@ final class MechanicalKeyboardView: NSView, MTKViewDelegate {
     }
     private func drawOnce() { if eligible { metal.draw() } }
     func updateDisplayResolution() {
-        guard let window else { return }
+        guard eligible, let window else { return }
         let size = window.convertToBacking(metal.convert(metal.bounds, to: nil)).size
         if size.width > 0, size.height > 0, metal.drawableSize != size {
             metal.autoResizeDrawable = false
@@ -381,6 +389,7 @@ final class MechanicalKeyboardView: NSView, MTKViewDelegate {
     }
 
     func cancel() {
+        guard pending != nil || state.activeCount > 0 else { return }
         generation += 1; pending?.cancel(); pending = nil; state.cancel()
         model.applyFullPress([:]); drawOnce()
     }
