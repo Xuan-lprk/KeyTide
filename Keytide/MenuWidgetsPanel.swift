@@ -7,8 +7,11 @@ final class MenuWidgetsPanel: NSPanel {
     private let card: NSView
     private let scrollView = NSScrollView()
     private let travel: CGFloat
-    private var widgets: [MenuWidgetContent] = []
-    private var visibleWidgets = Set<UUID>()
+    private var placements: [(configuration: MenuWidget, frame: NSRect)] = []
+    private var visibleWidgets: [UUID: MenuWidgetContent] = [:]
+    private var selectedDays: [UUID: Date] = [:]
+    private(set) var constellationHistory: ConstellationHistory
+    private var entranceFinished = false
     private var statsToken: UUID?
     private var scrollObserver: NSObjectProtocol?
     private var historyRefreshTimer: Timer?
@@ -18,13 +21,6 @@ final class MenuWidgetsPanel: NSPanel {
     var onOpenSettings: (() -> Void)?
     var onDismiss: (() -> Void)?
     var claimGeminiPreview: (() -> Bool)?
-
-    var constellationHistory: ConstellationHistory {
-        Dictionary(uniqueKeysWithValues: widgets.compactMap { widget in
-            guard let patterns = widget.lastConstellationPatterns, !patterns.isEmpty else { return nil }
-            return (widget.id, patterns)
-        })
-    }
 
     convenience init(screen: NSScreen, configuration: [MenuWidget], constellationHistory: ConstellationHistory) {
         self.init(available: screen.visibleFrame, configuration: configuration, constellationHistory: constellationHistory)
@@ -39,6 +35,8 @@ final class MenuWidgetsPanel: NSPanel {
         let height = min(available.height, 84 + max(122, modulesHeight + 16))
         let frame = NSRect(x: available.maxX - width, y: available.maxY - height, width: width, height: height)
         card = NSView(frame: NSRect(x: 20, y: 20, width: width - 32, height: height - 28))
+        let heatmapIDs = Set(configuration.filter { $0.kind == .heatmap }.map(\.id))
+        self.constellationHistory = constellationHistory.filter { heatmapIDs.contains($0.key) }
         travel = width
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
 
@@ -54,10 +52,11 @@ final class MenuWidgetsPanel: NSPanel {
         animationBehavior = .none
         setFrame(frame, display: false)
         configureContent(size: frame.size, rows: rows, rowHeights: rowHeights,
-                         modulesHeight: modulesHeight, allowsHalfWidth: allowsHalfWidth,
-                         constellationHistory: constellationHistory)
+                         modulesHeight: modulesHeight, allowsHalfWidth: allowsHalfWidth)
 
         let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(updateWidgetVisibility),
+                           name: NSWindow.didChangeOcclusionStateNotification, object: self)
         for name in [NSApplication.didHideNotification, NSApplication.didChangeScreenParametersNotification] {
             center.addObserver(self, selector: #selector(requestClose), name: name, object: NSApp)
         }
@@ -92,22 +91,33 @@ final class MenuWidgetsPanel: NSPanel {
     func present() {
         let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         revealHeatmapForGeminiPreview()
-        refreshVisibleWidgets()
         if animate { card.layer?.transform = CATransform3DMakeTranslation(travel, 0, 0) }
         makeKeyAndOrderFront(nil)
+        isPresentingWidgets = true
+        entranceFinished = !animate
+        if !placements.isEmpty {
+            scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView, queue: .main) { [weak self] _ in self?.updateWidgetVisibility() }
+            updateWidgetVisibility()
+        }
         if animate {
-            slide(from: travel, to: 0, duration: 0.26) { [weak self] in self?.startWidgets() }
-        } else {
-            startWidgets()
+            slide(from: travel, to: 0, duration: 0.26) { [weak self] in
+                guard let self, self.isPresentingWidgets else { return }
+                self.entranceFinished = true
+                // Claim a requested preview in layout order when two heatmaps are visible.
+                for placement in self.placements {
+                    self.visibleWidgets[placement.configuration.id]?.start(claimGeminiPreview: self.claimGeminiPreview)
+                }
+            }
         }
     }
 
     private func revealHeatmapForGeminiPreview() {
-        guard claimGeminiPreview != nil, let heatmap = widgets.first(where: \.isHeatmap),
-              !scrollView.documentVisibleRect.contains(heatmap.view.frame) else { return }
+        guard claimGeminiPreview != nil, let heatmap = placements.first(where: { $0.configuration.kind == .heatmap }),
+              !scrollView.documentVisibleRect.contains(heatmap.frame) else { return }
         let clip = scrollView.contentView
         var target = clip.bounds
-        target.origin.y = max(0, heatmap.view.frame.minY - 4)
+        target.origin.y = max(0, heatmap.frame.minY - 4)
         clip.scroll(to: clip.constrainBoundsRect(target).origin)
         scrollView.reflectScrolledClipView(clip)
     }
@@ -134,6 +144,7 @@ final class MenuWidgetsPanel: NSPanel {
         onOpenSettings = nil
         orderOut(nil)
         card.layer?.removeAllAnimations()
+        for id in visibleWidgets.keys { releaseWidget(id) }
         completion?()
     }
 
@@ -152,66 +163,78 @@ final class MenuWidgetsPanel: NSPanel {
         CATransaction.commit()
     }
 
-    private var widgetsInViewport: [MenuWidgetContent] {
-        let viewport = scrollView.documentVisibleRect
-        return widgets.filter { viewport.intersects($0.view.frame) }
-    }
-
     private func refreshVisibleWidgets() {
-        let visible = widgetsInViewport
-        guard !visible.isEmpty else { return }
+        guard isPresentingWidgets, !visibleWidgets.isEmpty else { return }
         let stats = StatsManager.shared.displayCurrentStats()
-        visible.forEach { $0.refresh(stats) }
-        guard isPresentingWidgets, historyRefreshTimer == nil, visible.contains(where: \.readsHistory) else { return }
+        visibleWidgets.values.forEach { $0.refresh(stats) }
+        guard historyRefreshTimer == nil, visibleWidgets.values.contains(where: \.hasDeferredHistoryUpdate) else { return }
         // Calendar and cumulative queries should not run at the live capture rate.
         let timer = Timer(timeInterval: 2, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.historyRefreshTimer = nil
             guard self.isPresentingWidgets else { return }
             let data = MenuWidgetHistoryData()
-            self.widgetsInViewport.forEach { $0.refreshHistory(data) }
+            self.visibleWidgets.values.forEach { $0.refreshHistory(data) }
         }
         historyRefreshTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    private func startWidgets() {
-        guard isVisible, !isDismissing, !isPresentingWidgets, !widgets.isEmpty else { return }
-        isPresentingWidgets = true
-        statsToken = StatsManager.shared.addStatsUpdateHandler { [weak self] in self?.refreshVisibleWidgets() }
-        scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView, queue: .main) { [weak self] _ in self?.updateWidgetVisibility() }
-        updateWidgetVisibility()
-    }
+    @objc private func updateWidgetVisibility() {
+        guard isPresentingWidgets, let document = scrollView.documentView else { return }
+        let viewport = isVisible && occlusionState.contains(.visible) ? scrollView.documentVisibleRect : .zero
+        let visible = placements.filter { viewport.intersects($0.frame) }
+        let ids = Set(visible.map { $0.configuration.id })
+        guard ids != Set(visibleWidgets.keys) else { return }
 
-    private func updateWidgetVisibility() {
-        let inViewport = widgetsInViewport
-        let visible = Set(inViewport.map(\.id))
-        guard isPresentingWidgets, visible != visibleWidgets else { return }
-        if !inViewport.contains(where: \.readsHistory) {
+        let wasShowingHistory = visibleWidgets.values.contains(where: \.readsHistory)
+        for id in visibleWidgets.keys where !ids.contains(id) { releaseWidget(id) }
+        if !visible.isEmpty {
+            let stats = StatsManager.shared.displayCurrentStats()
+            let history = MenuWidgetHistoryData()
+            for (configuration, frame) in visible where visibleWidgets[configuration.id] == nil {
+                let id = configuration.id
+                let widget = MenuWidgetContent(configuration: configuration, previousPatterns: constellationHistory[id] ?? [],
+                                               selectedDay: selectedDays[id]) { [weak self] date in
+                    self?.requestClose()
+                    KeyboardHeatmapWindowController.shared.show(day: date)
+                }
+                visibleWidgets[id] = widget
+                widget.view.frame = frame
+                document.addSubview(widget.view)
+                widget.refresh(stats)
+                widget.refreshHistory(history)
+                if entranceFinished { widget.start(claimGeminiPreview: claimGeminiPreview) }
+            }
+            if statsToken == nil {
+                statsToken = StatsManager.shared.addStatsUpdateHandler { [weak self] in self?.refreshVisibleWidgets() }
+            }
+        } else if let statsToken {
+            StatsManager.shared.removeStatsUpdateHandler(statsToken)
+            self.statsToken = nil
+        }
+        if !visibleWidgets.values.contains(where: \.hasDeferredHistoryUpdate) {
             historyRefreshTimer?.invalidate()
             historyRefreshTimer = nil
         }
-        let stats = StatsManager.shared.displayCurrentStats()
-        let history = MenuWidgetHistoryData()
-        for widget in widgets {
-            if visible.contains(widget.id), !visibleWidgets.contains(widget.id) {
-                widget.refresh(stats)
-                widget.refreshHistory(history)
-                widget.start(claimGeminiPreview: claimGeminiPreview)
-            } else if !visible.contains(widget.id), visibleWidgets.contains(widget.id) {
-                widget.stop()
-            }
+        if wasShowingHistory && !visibleWidgets.values.contains(where: \.readsHistory) {
+            StatsManager.shared.discardPresentationHistory()
         }
-        visibleWidgets = visible
+    }
+
+    private func releaseWidget(_ id: UUID) {
+        guard let widget = visibleWidgets.removeValue(forKey: id) else { return }
+        constellationHistory[id] = widget.lastConstellationPatterns
+        selectedDays[id] = widget.selectedDay
+        if isPresentingWidgets { widget.stop() }
+        widget.view.removeFromSuperview()
     }
 
     private func stopWidgets() {
         isPresentingWidgets = false
         historyRefreshTimer?.invalidate()
         historyRefreshTimer = nil
-        widgets.filter { visibleWidgets.contains($0.id) }.forEach { $0.stop() }
-        visibleWidgets.removeAll()
+        visibleWidgets.values.forEach { $0.stop() }
         if let statsToken { StatsManager.shared.removeStatsUpdateHandler(statsToken) }
         if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) }
         statsToken = nil
@@ -219,8 +242,7 @@ final class MenuWidgetsPanel: NSPanel {
     }
 
     private func configureContent(size: NSSize, rows: [[MenuWidget]], rowHeights: [CGFloat],
-                                  modulesHeight: CGFloat, allowsHalfWidth: Bool,
-                                  constellationHistory: ConstellationHistory) {
+                                  modulesHeight: CGFloat, allowsHalfWidth: Bool) {
         let clip = NSView(frame: NSRect(origin: .zero, size: size))
         clip.wantsLayer = true
         clip.layer?.masksToBounds = true
@@ -295,14 +317,8 @@ final class MenuWidgetsPanel: NSPanel {
         for (row, height) in zip(rows, rowHeights) {
             var x: CGFloat = 12
             for item in row {
-                let widget = MenuWidgetContent(configuration: item, previousPatterns: constellationHistory[item.id] ?? []) { [weak self] date in
-                    self?.requestClose()
-                    KeyboardHeatmapWindowController.shared.show(day: date)
-                }
                 let width = allowsHalfWidth && item.usesHalfWidth ? halfWidth : contentWidth
-                widget.view.frame = NSRect(x: x, y: y, width: width, height: height)
-                document.addSubview(widget.view)
-                widgets.append(widget)
+                placements.append((item, NSRect(x: x, y: y, width: width, height: height)))
                 x += width + 10
             }
             y += height + 10
@@ -399,7 +415,8 @@ extension TypingPulseView: MenuPulseRendering {}
 extension GeekTypingPulseView: MenuPulseRendering {}
 
 private final class MenuWidgetContent {
-    let id: UUID
+    private let kind: MenuWidgetKind
+    private(set) var selectedDay: Date?
     let view: MenuWidgetSurface
     private var refreshStats: (DailyStats) -> Void = { _ in }
     private var updateHistory: ((MenuWidgetHistoryData) -> Void)?
@@ -407,13 +424,14 @@ private final class MenuWidgetContent {
     private var pulse: (NSView & MenuPulseRendering)?
     private var rateTimer: Timer?
 
-    var isHeatmap: Bool { heatmap != nil }
-    var readsHistory: Bool { updateHistory != nil }
+    var hasDeferredHistoryUpdate: Bool { updateHistory != nil }
+    var readsHistory: Bool { kind == .history || hasDeferredHistoryUpdate }
     var lastConstellationPatterns: Set<KeyboardHeatmapWidget.Pattern>? { heatmap?.lastConstellationPatterns }
 
-    init(configuration: MenuWidget, previousPatterns: Set<KeyboardHeatmapWidget.Pattern>, openDay: @escaping (Date) -> Void) {
-        id = configuration.id
-        let kind = configuration.kind
+    init(configuration: MenuWidget, previousPatterns: Set<KeyboardHeatmapWidget.Pattern>, selectedDay: Date?,
+         openDay: @escaping (Date) -> Void) {
+        self.selectedDay = selectedDay
+        kind = configuration.kind
         let geek = configuration.style == .geek && kind != .heatmap
         view = MenuWidgetSurface(radius: 12, fill: geek ? GeekPalette.panel : nil)
         if geek { view.appearance = NSAppearance(named: .darkAqua) }
@@ -612,16 +630,18 @@ private final class MenuWidgetContent {
         legend.widthAnchor.constraint(lessThanOrEqualTo: content.widthAnchor).isActive = true
 
         var days: [ActivityHeatmapView.DayActivity] = []
+        chart.onSelectionChanged = { [weak self] index in self?.selectedDay = days[index].date }
+        chart.onSelectionCleared = { [weak self] in self?.selectedDay = nil }
         chart.onOpenDay = { index in
             guard days.indices.contains(index) else { return }
             openDay(days[index].date)
         }
-        updateHistory = { data in
+        updateHistory = { [weak self] data in
             let next = Array(data.days.suffix(monthly ? 30 : 7))
             guard next != days else { return }
-            let selection = chart.selectedIndex.flatMap { days.indices.contains($0) ? days[$0].date : nil }
             days = next
-            chart.update(days: next, selectedDate: selection)
+            chart.update(days: next, selectedDate: self?.selectedDay)
+            self?.selectedDay = chart.selectedIndex.map { days[$0].date }
         }
         return content
     }
@@ -634,9 +654,14 @@ private final class MenuWidgetContent {
         default: chart.metric = .combined
         }
         chart.onOpenDay = openDay
-        updateHistory = { data in
+        chart.onSelectionChanged = { [weak self] day in self?.selectedDay = day?.date }
+        updateHistory = { [weak self] data in
             guard chart.activityData != data.days else { return }
+            let restore = chart.activityData.isEmpty ? self?.selectedDay : nil
             chart.activityData = data.days
+            if let restore, let index = data.days.firstIndex(where: { $0.date == restore }) {
+                chart.selectDay(at: index)
+            }
         }
         return chart
     }

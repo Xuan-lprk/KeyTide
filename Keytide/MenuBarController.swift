@@ -227,7 +227,11 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             self?.closeStatistics()
             SettingsWindowController.shared.show(page: .appearance)
         }
-        panel.onDismiss = { [weak self] in self?.widgetsPanel = nil }
+        panel.onDismiss = { [weak self, weak panel] in
+            guard let self, let panel, self.widgetsPanel === panel else { return }
+            self.constellationHistory = panel.constellationHistory
+            self.widgetsPanel = nil
+        }
         widgetsPanel = panel
         panel.present()
         return panel.isVisible
@@ -283,7 +287,6 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             return
         }
         guard let widgetsPanel, !widgetsPanel.isDismissing else { return }
-        constellationHistory = widgetsPanel.constellationHistory
         removeEventMonitor()
         widgetsPanel.dismiss()
         StatsManager.shared.discardPresentationHistory()

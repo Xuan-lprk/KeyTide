@@ -77,6 +77,29 @@ final class KeyboardHeatmapEffectsTests: XCTestCase {
         XCTAssertEqual(animation.last?.namedGroups, [.init(pattern: .loneStar, firstKey: "F6")])
     }
 
+    func testAutoplayCanFindGeminiAmongLessUsedKeysWithoutRepeatingTheBonus() throws {
+        let hot = ["Space": 2_000, "RightCmd": 1_200, "Return": 900, "Delete": 750, "A": 650]
+        let twins = ["E": 50, "R": 50, "D": 50, "F": 50, "C": 50, "V": 50]
+        let counts = hot.merging(twins) { count, _ in count }
+        let effects = KeyboardHeatmapEffects(positions: keyboardPositions, counts: counts)
+        var matches = 0
+        for seed in 0..<256 {
+            var random = SeededRandom(state: UInt64(seed))
+            let animation = constellations(effects.frames(for: .constellation, from: nil, using: &random))
+            guard let result = animation.last, result.namedGroups.first?.pattern == .gemini else { continue }
+            matches += 1
+            let origin = try XCTUnwrap(animation.first?.stars.keys.first)
+            XCTAssertNotNil(hot[origin])
+            XCTAssertEqual(Set(result.stars.keys), Set(twins.keys).union([origin]))
+
+            var replay = SeededRandom(state: UInt64(seed))
+            let next = constellations(effects.frames(for: .constellation, from: nil, avoiding: [.gemini], using: &replay))
+            XCTAssertFalse(next.last?.namedGroups.contains { $0.pattern == .gemini } ?? true)
+        }
+        XCTAssertGreaterThanOrEqual(matches, 16)
+        XCTAssertLessThanOrEqual(matches, 50)
+    }
+
     func testGeminiPreviewReachesFullColorWithNoRecordedKeys() throws {
         let effects = KeyboardHeatmapEffects(positions: keyboardPositions, counts: [:])
         let frames = constellations(effects.geminiPreviewFrames())

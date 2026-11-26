@@ -101,8 +101,65 @@ class StatsManager {
         }
     }
 
-    private struct CaptureHistory: Decodable {
-        let history: [String: DailyStats]
+    private struct CaptureHistory<Day: Decodable>: Decodable {
+        let history: [String: Day]
+    }
+
+    private struct ChartDay: Decodable {
+        let totals: DailyStats
+
+        init(from decoder: Decoder) throws {
+            totals = try DailyStats(from: decoder, includingBreakdowns: false)
+        }
+    }
+
+    /// Used by the menu process when dailyStats is stale or missing. Historical
+    /// records with valid date keys can be skipped without decoding their values.
+    private struct StoredDay: Decodable {
+        private typealias Lookup = (date: Date, formatter: DateFormatter, calendar: Calendar)
+        private static let lookupKey = CodingUserInfoKey(rawValue: "Keytide.storedDayLookup")!
+
+        private struct DayKey: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+            init(stringValue: String) { self.stringValue = stringValue }
+            init?(intValue: Int) { return nil }
+        }
+
+        let value: DailyStats?
+
+        static func read(from data: Data, date: Date, formatter: DateFormatter, calendar: Calendar) -> DailyStats? {
+            let decoder = JSONDecoder()
+            decoder.userInfo[lookupKey] = (date, formatter, calendar) as Lookup
+            return try? decoder.decode(Self.self, from: data).value
+        }
+
+        init(from decoder: Decoder) throws {
+            guard let lookup = decoder.userInfo[Self.lookupKey] as? Lookup else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Missing day lookup"))
+            }
+            let entries = try decoder.container(keyedBy: DayKey.self)
+            let formatter = lookup.formatter
+            let today = formatter.string(from: lookup.date)
+            let key = DayKey(stringValue: today)
+            if entries.contains(key) {
+                value = try entries.decode(DailyStats.self, forKey: key)
+                return
+            }
+            // Match normalizedHistory's fallback and tie-break for legacy keys.
+            let legacy = entries.allKeys.filter { key in
+                guard let date = formatter.date(from: key.stringValue) else { return true }
+                return formatter.string(from: date) != key.stringValue
+            }
+            for key in legacy.sorted(by: { $0.stringValue < $1.stringValue }) {
+                let day = try entries.decode(DailyStats.self, forKey: key)
+                if formatter.string(from: lookup.calendar.startOfDay(for: day.date)) == today {
+                    value = day
+                    return
+                }
+            }
+            value = nil
+        }
     }
 
     enum ImportMode {
@@ -138,6 +195,7 @@ class StatsManager {
     private var history: [String: DailyStats] = [:]
     private var captureHistoryPayload: Data?
     private var presentationHistory: [String: DailyStats]?
+    private var chartHistory: [String: DailyStats]?
     private var saveTimer: Timer?
     private var statsUpdateTimer: Timer?
     private var midnightCheckTimer: Timer?
@@ -363,7 +421,7 @@ class StatsManager {
         let today = calendar.startOfDay(for: environment.now())
         currentStats = DailyStats(date: today)
         if ownsCaptureStore {
-            history = normalizedHistory(loadHistory())
+            history = normalizedHistory(loadHistory(DailyStats.self))
         }
 
         // 优先加载 dailyStats；如果缺失或不是今天，回退到 history 里的今天数据。
@@ -377,8 +435,13 @@ class StatsManager {
             let todayKey = dateFormatter.string(from: today)
             // Recover today's totals from older installations without retaining their
             // decoded history in a menu-only process.
-            let todayHistory = ownsCaptureStore ? history[todayKey] : normalizedHistory(loadHistory())[todayKey]
-            if let todayHistory { currentStats = normalizedDailyStats(todayHistory) }
+            if ownsCaptureStore {
+                if let day = history[todayKey] { currentStats = day }
+            } else if let data = defaults.data(forKey: historyKey),
+                      let day = StoredDay.read(from: data, date: today, formatter: dateFormatter, calendar: calendar) {
+                currentStats = normalizedDailyStats(day)
+                currentStats.date = today
+            }
         }
 
         updateNotificationBaselines()
@@ -952,6 +1015,7 @@ class StatsManager {
         if let historyPayload {
             captureHistoryPayload = historyPayload
             presentationHistory = nil
+            chartHistory = nil
         }
         let menuCountsChanged = snapshot.current.keyPresses != currentStats.keyPresses
             || snapshot.current.totalClicks != currentStats.totalClicks
@@ -977,6 +1041,7 @@ class StatsManager {
         guard !ownsCaptureStore else { return }
         statsStateLock.lock()
         presentationHistory = nil
+        chartHistory = nil
         statsStateLock.unlock()
     }
 
@@ -984,12 +1049,36 @@ class StatsManager {
     private func readHistoryLocked() -> [String: DailyStats] {
         if ownsCaptureStore { return history }
         if let presentationHistory { return presentationHistory }
-        let received = captureHistoryPayload.flatMap {
-            try? JSONDecoder().decode(CaptureHistory.self, from: $0).history
-        }
-        let decoded = received ?? normalizedHistory(loadHistory())
+        let decoded = receivedHistory(DailyStats.self) ?? normalizedHistory(loadHistory(DailyStats.self))
         presentationHistory = decoded
         return decoded
+    }
+
+    /// Trends and activity calendars only need daily totals. Keep this projection
+    /// separate so an export or a detail view always gets every breakdown.
+    private func chartHistoryLocked() -> [String: DailyStats] {
+        if ownsCaptureStore { return history }
+        if let chartHistory { return chartHistory }
+        let days: [String: DailyStats]
+        if let presentationHistory {
+            days = presentationHistory.mapValues { day in
+                var totals = day
+                totals.keyPressCounts = [:]
+                totals.appStats = [:]
+                return totals
+            }
+        } else {
+            let stored = receivedHistory(ChartDay.self) ?? loadHistory(ChartDay.self)
+            days = stored.mapValues(\.totals)
+        }
+        let totals = normalizedHistory(days)
+        chartHistory = totals
+        return totals
+    }
+
+    private func receivedHistory<Day: Decodable>(_ type: Day.Type) -> [String: Day]? {
+        guard let captureHistoryPayload else { return nil }
+        return try? JSONDecoder().decode(CaptureHistory<Day>.self, from: captureHistoryPayload).history
     }
 
     private func loadStats() -> DailyStats? {
@@ -1000,9 +1089,9 @@ class StatsManager {
         return stats
     }
 
-    private func loadHistory() -> [String: DailyStats] {
+    private func loadHistory<Day: Decodable>(_ type: Day.Type) -> [String: Day] {
         guard let data = userDefaults.data(forKey: historyKey),
-              let stored = try? JSONDecoder().decode([String: DailyStats].self, from: data) else {
+              let stored = try? JSONDecoder().decode([String: Day].self, from: data) else {
             return [:]
         }
         return stored
@@ -1659,7 +1748,7 @@ extension StatsManager {
         statsStateLock.lock()
         let current = currentStats
         let needsArchive = dates.contains { !calendar.isDate($0, inSameDayAs: current.date) }
-        let history = needsArchive ? readHistoryLocked() : [:]
+        let history = needsArchive ? chartHistoryLocked() : [:]
         statsStateLock.unlock()
         // These charts read scalar metrics from a short date range. The store
         // already normalizes date keys, and the current day overrides its saved copy.
@@ -1712,13 +1801,17 @@ extension StatsManager {
 
         var result: [(date: Date, keyPresses: Int, clicks: Int)] = []
         var current = startDate
-        let displayHistory = displayHistorySnapshot()
+        statsStateLock.lock()
+        let displayHistory = chartHistoryLocked()
+        let live = currentStats
+        statsStateLock.unlock()
+        let liveKey = dateFormatter.string(from: calendar.startOfDay(for: live.date))
 
         while current <= today {
             let key = dateFormatter.string(from: current)
 
-            if let stats = displayHistory[key] {
-                result.append((current, stats.keyPresses, stats.totalClicks))
+            if let stats = key == liveKey ? live : displayHistory[key] {
+                result.append((current, max(0, stats.keyPresses), stats.totalClicks))
             } else {
                 result.append((current, 0, 0))
             }

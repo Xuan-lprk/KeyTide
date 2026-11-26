@@ -246,10 +246,14 @@ struct DailyStats: Codable {
     }
 
     init(from decoder: Decoder) throws {
+        try self.init(from: decoder, includingBreakdowns: true)
+    }
+
+    init(from decoder: Decoder, includingBreakdowns: Bool) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         date = try container.decodeIfPresent(Date.self, forKey: .date) ?? Calendar.current.startOfDay(for: Date())
         keyPresses = try container.decodeIfPresent(Int.self, forKey: .keyPresses) ?? 0
-        keyPressCounts = try container.decodeIfPresent([String: Int].self, forKey: .keyPressCounts) ?? [:]
+        keyPressCounts = includingBreakdowns ? try container.decodeIfPresent([String: Int].self, forKey: .keyPressCounts) ?? [:] : [:]
         leftClicks = try container.decodeIfPresent(Int.self, forKey: .leftClicks) ?? 0
         rightClicks = try container.decodeIfPresent(Int.self, forKey: .rightClicks) ?? 0
         middleClicks = try container.decodeIfPresent(Int.self, forKey: .middleClicks) ?? 0
@@ -261,7 +265,7 @@ struct DailyStats: Codable {
         mouseDistance = try container.decodeIfPresent(Double.self, forKey: .mouseDistance) ?? 0
         scrollDistance = try container.decodeIfPresent(Double.self, forKey: .scrollDistance) ?? 0
         scrollSessions = try container.decodeIfPresent(Int.self, forKey: .scrollSessions) ?? 0
-        appStats = try container.decodeIfPresent([String: AppStats].self, forKey: .appStats) ?? [:]
+        appStats = includingBreakdowns ? try container.decodeIfPresent([String: AppStats].self, forKey: .appStats) ?? [:] : [:]
         peakKPS = Self.decodeIntOrDouble(container: container, key: .peakKPS)
         peakCPS = Self.decodeIntOrDouble(container: container, key: .peakCPS)
     }

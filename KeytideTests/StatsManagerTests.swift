@@ -102,6 +102,7 @@ final class StatsManagerTests: XCTestCase {
         let app = context.makeManager(ownsCaptureStore: false)
         XCTAssertEqual(app.displayCurrentStats().keyPresses, 1)
         XCTAssertEqual(app.localHistorySnapshot()[context.dayKey(older)]?.keyPresses, 6)
+        XCTAssertEqual(app.historySeries(range: .week, metric: .keyPresses).dropLast(2).last?.value, 6)
 
         func receive(current: Int, history: [String: DailyStats]?) throws {
             let payload = try JSONEncoder().encode(StatsManager.CaptureSnapshot(
@@ -111,9 +112,14 @@ final class StatsManagerTests: XCTestCase {
             app.receiveCaptureUpdate(update, historyPayload: update.containsHistory ? payload : nil)
         }
         try receive(current: 7, history: [context.dayKey(yesterday): previous])
+        let days = app.heatmapActivityData()
+        XCTAssertEqual(days.dropLast().last?.keyPresses, 5)
+        XCTAssertEqual(days.last?.keyPresses, 7)
+        XCTAssertEqual(days.dropLast(2).last?.keyPresses, 0)
         XCTAssertEqual(app.appStatsSummary(range: .week).first?.keyPresses, 5)
         app.discardPresentationHistory()
         try receive(current: 8, history: nil)
+        XCTAssertEqual(app.historySeries(range: .week, metric: .keyPresses).suffix(2).map(\.value), [5, 8])
         XCTAssertEqual(app.localHistorySnapshot()[context.dayKey(yesterday)]?.keyPresses, 5)
         XCTAssertEqual(app.localHistorySnapshot()[context.dayKey(today)]?.keyPresses, 8)
         XCTAssertNil(app.localHistorySnapshot()[context.dayKey(older)])
@@ -125,9 +131,37 @@ final class StatsManagerTests: XCTestCase {
         XCTAssertEqual(export.history[context.dayKey(yesterday)]?.keyPresses, 5)
 
         try receive(current: 0, history: [:])
+        XCTAssertEqual(app.heatmapActivityData().suffix(2).map(\.keyPresses), [0, 0])
         app.discardPresentationHistory()
         XCTAssertEqual(app.localHistorySnapshot().keys.sorted(), [context.dayKey(today)])
         XCTAssertTrue(app.appStatsSummary(range: .all).isEmpty)
+    }
+
+    func testMenuStartupReadsTodaysCompleteRecordUsingHistoricalDayIdentity() throws {
+        let context = try makeContext()
+        defer { context.cleanUp() }
+        let today = context.day(offset: 0)
+        let yesterday = context.day(offset: -1)
+        var recorded = makeStats(on: yesterday, keyPresses: 12)
+        recorded.keyPressCounts = ["Function+A": 3]
+        recorded.appStats["fixture"] = AppStats(bundleId: "fixture", displayName: "Fixture")
+        let fallback = makeStats(on: today, keyPresses: 7)
+        var history = ["z-invalid": makeStats(on: today, keyPresses: 99), "a-invalid": fallback,
+                       context.dayKey(yesterday): makeStats(on: today, keyPresses: 25)]
+        history[context.dayKey(today)] = recorded
+        try seed(defaults: context.defaults, current: makeStats(on: yesterday), history: history)
+        let current = context.makeManager(ownsCaptureStore: false).displayCurrentStats()
+        XCTAssertEqual(current.date, today)
+        XCTAssertEqual(current.keyPresses, 12)
+        XCTAssertEqual(current.keyPressCounts, ["Fn+A": 3])
+        XCTAssertEqual(current.appStats["fixture"]?.displayName, "Fixture")
+
+        history[context.dayKey(today)] = nil
+        try seed(defaults: context.defaults, current: makeStats(on: yesterday), history: history)
+        XCTAssertEqual(context.makeManager(ownsCaptureStore: false).displayCurrentStats().keyPresses, 7)
+        try seed(defaults: context.defaults, current: makeStats(on: yesterday),
+                 history: [context.dayKey(yesterday): fallback])
+        XCTAssertEqual(context.makeManager(ownsCaptureStore: false).displayCurrentStats().keyPresses, 0)
     }
 
     func testRemovingMenuPresentationStopsIconSamplingButKeepsRecording() throws {

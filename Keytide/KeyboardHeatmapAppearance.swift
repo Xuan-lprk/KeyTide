@@ -192,6 +192,13 @@ struct KeyboardHeatmapEffects {
                 let candidate = constellationLayout(from: selected, used: used, hot: hot, peak: peak, using: &random)
                 if repeatedPatterns(in: candidate, previous: previous) < repeats { layout = candidate }
             }
+            // Give autoplay and replay an extra draw from active keys, while keeping the hot origin.
+            if selected == nil, layout.geminiKeys.isEmpty, !previous.contains(.gemini), used.count >= 6,
+               Int.random(in: 0..<8, using: &random) == 0,
+               let twins = geminiChains(in: Array(used.prefix(18))) ?? geminiChains(in: used) {
+                let destinations = (twins.left + twins.right).filter { $0 != layout.origin }
+                layout = geminiLayout(from: layout.origin, destinations: destinations, chains: twins)
+            }
             return constellationFrames(layout)
         case .ripple:
             guard let origin = positions[selected ?? ranked[0]] else { return [] }
